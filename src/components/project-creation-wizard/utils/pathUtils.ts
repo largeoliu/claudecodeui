@@ -18,9 +18,21 @@ export const isCloneWorkflow = (workspaceType: WorkspaceType, githubUrl: string)
 
 export const getSuggestionRootPath = (inputPath: string): string => {
   const trimmedPath = inputPath.trim();
-  const lastSeparatorIndex = Math.max(trimmedPath.lastIndexOf('/'), trimmedPath.lastIndexOf('\\'));
-  if (lastSeparatorIndex === 2 && /^[A-Za-z]:/.test(trimmedPath)) {
+  if (!trimmedPath) {
+    return '~';
+  }
+
+  if (/^[A-Za-z]:$/.test(trimmedPath) || WINDOWS_DRIVE_PATTERN.test(trimmedPath)) {
     return `${trimmedPath.slice(0, 2)}\\`;
+  }
+
+  if (trimmedPath === '/') {
+    return '/';
+  }
+
+  const lastSeparatorIndex = Math.max(trimmedPath.lastIndexOf('/'), trimmedPath.lastIndexOf('\\'));
+  if (trimmedPath.startsWith('/')) {
+    return lastSeparatorIndex <= 0 ? '/' : trimmedPath.slice(0, lastSeparatorIndex);
   }
 
   return lastSeparatorIndex > 0 ? trimmedPath.slice(0, lastSeparatorIndex) : '~';

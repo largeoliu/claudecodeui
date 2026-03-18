@@ -88,12 +88,27 @@ export const SubagentContainer: React.FC<SubagentContainerProps> = ({
         )}
 
         {/* Completion status */}
-        {isComplete && (
+        {isComplete && !toolResult?.isError && (
           <div className="mt-1 flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
             <svg className="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
             <span>Completed ({childTools.length} {childTools.length === 1 ? 'tool' : 'tools'})</span>
+          </div>
+        )}
+
+        {/* Failed status */}
+        {isComplete && toolResult?.isError && (
+          <div className="mt-2 rounded border border-red-200/60 bg-red-50/50 p-2 dark:border-red-800/40 dark:bg-red-950/10">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300">
+              <svg className="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              <span>Failed</span>
+            </div>
+            <div className="mt-1 text-xs text-red-900 dark:text-red-100">
+              {String(toolResult.content || 'Agent execution failed')}
+            </div>
           </div>
         )}
 

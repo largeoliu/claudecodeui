@@ -45,6 +45,7 @@ export interface ChatMessage {
     childTools: SubagentChildTool[];
     currentToolIndex: number;
     isComplete: boolean;
+    isFailed?: boolean;
   };
   [key: string]: unknown;
 }

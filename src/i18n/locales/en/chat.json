@@ -88,16 +88,12 @@
   "codex": {
     "permissionMode": "Permission Mode",
     "modes": {
-      "default": "Default Mode",
-      "acceptEdits": "Accept Edits",
-      "bypassPermissions": "Bypass Permissions",
+      "acceptEdits": "Edit Mode",
       "plan": "Plan Mode"
     },
     "descriptions": {
-      "default": "Only trusted commands (ls, cat, grep, git status, etc.) run automatically. Other commands are skipped. Can write to workspace.",
       "acceptEdits": "All commands run automatically within the workspace. Full auto mode with sandboxed execution.",
-      "bypassPermissions": "Full system access with no restrictions. All commands run automatically with full disk and network access. Use with caution.",
-      "plan": "Planning mode - no commands are executed"
+      "plan": "Plan mode - only analyzes code and creates plans, no file modifications or command execution"
     },
     "technicalDetails": "Technical details"
   },

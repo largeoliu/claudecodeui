@@ -34,9 +34,16 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
       return;
     }
 
-    const savedMode = localStorage.getItem(`permissionMode-${selectedSession.id}`);
-    setPermissionMode((savedMode as PermissionMode) || 'default');
-  }, [selectedSession?.id]);
+    const savedMode = localStorage.getItem('permissionMode-' + selectedSession.id);
+    const validCodexModes = ['acceptEdits', 'plan'];
+    const defaultMode = (savedMode as PermissionMode) || 'default';
+
+    if (provider === 'codex' && !validCodexModes.includes(defaultMode)) {
+      setPermissionMode('acceptEdits');
+    } else {
+      setPermissionMode(defaultMode);
+    }
+  }, [selectedSession?.id, provider]);
 
   useEffect(() => {
     if (!selectedSession?.__provider || selectedSession.__provider === provider) {

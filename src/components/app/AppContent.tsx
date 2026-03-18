@@ -158,7 +158,7 @@ export default function AppContent() {
         </div>
       )}
 
-      <div className={`flex min-w-0 flex-1 flex-col ${isMobile ? 'pb-mobile-nav' : ''}`}>
+      <div className="flex min-w-0 flex-1 flex-col">
         <MainContent
           selectedProject={selectedProject}
           selectedSession={selectedSession}

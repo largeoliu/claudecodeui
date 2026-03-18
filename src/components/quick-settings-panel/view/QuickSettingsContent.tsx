@@ -45,7 +45,7 @@ export default function QuickSettingsContent({
   );
 
   return (
-    <div className={`flex-1 space-y-6 overflow-y-auto overflow-x-hidden bg-background p-4 ${isMobile ? 'pb-mobile-nav' : ''}`}>
+    <div className="flex-1 space-y-6 overflow-y-auto overflow-x-hidden bg-background p-4">
       <QuickSettingsSection title={t('quickSettings.sections.appearance')}>
         <div className={SETTING_ROW_CLASS}>
           <span className="flex items-center gap-2 text-sm text-gray-900 dark:text-white">

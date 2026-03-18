@@ -395,26 +395,21 @@
     },
     "codex": {
       "permissionMode": "権限モード",
-      "description": "Codexがファイルの変更やコマンドの実行を処理する方法を制御します",
+      "description": "Codexが直接編集するか、計画モードに留まるかを制御します",
       "modes": {
-        "default": {
-          "title": "デフォルト",
-          "description": "信頼されたコマンド（ls、cat、grep、git statusなど）のみ自動実行。その他のコマンドはスキップ。ワークスペースへの書き込みは可能。"
-        },
         "acceptEdits": {
-          "title": "編集を許可",
-          "description": "ワークスペース内ですべてのコマンドを自動実行。サンドボックス環境での完全自動モード。"
+          "title": "編集モード",
+          "description": "ワークスペース内ですべてのコマンドを自動実行します。Codexがファイルを直接編集できます。"
         },
-        "bypassPermissions": {
-          "title": "権限をバイパス",
-          "description": "制限なしの完全なシステムアクセス。すべてのコマンドがディスクとネットワークへの完全なアクセスで自動実行されます。注意して使用してください。"
+        "plan": {
+          "title": "計画モード",
+          "description": "Codexは実装計画のみを作成し、チャットからファイル変更やコマンド実行は行いません。"
         }
       },
       "technicalDetails": "技術的な詳細",
       "technicalInfo": {
-        "default": "sandboxMode=workspace-write, approvalPolicy=untrusted。信頼されたコマンド: cat, cd, grep, head, ls, pwd, tail, git status/log/diff/show, find（-execなし）など。",
         "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never。すべてのコマンドがプロジェクトディレクトリ内で自動実行。",
-        "bypassPermissions": "sandboxMode=danger-full-access, approvalPolicy=never。完全なシステムアクセス。信頼された環境でのみ使用してください。",
+        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted。チャットのプロンプトには /plan が付き、Codex は計画モードのままファイルを編集しません。",
         "overrideNote": "チャットインターフェースのモードボタンを使用してセッションごとに上書きできます。"
       }
     },

@@ -159,21 +159,18 @@ function transformCodexEvent(event) {
 
 /**
  * Map permission mode to Codex SDK options
- * @param {string} permissionMode - 'default', 'acceptEdits', or 'bypassPermissions'
+ * @param {string} permissionMode - 'acceptEdits' or 'plan' (legacy values are also accepted)
  * @returns {object} - { sandboxMode, approvalPolicy }
  */
 function mapPermissionModeToCodexOptions(permissionMode) {
   switch (permissionMode) {
     case 'acceptEdits':
+    case 'bypassPermissions':
       return {
         sandboxMode: 'workspace-write',
         approvalPolicy: 'never'
       };
     case 'plan':
-      return {
-        sandboxMode: 'workspace-write',
-        approvalPolicy: 'untrusted'
-      };
     case 'default':
     default:
       return {
@@ -196,7 +193,7 @@ export async function queryCodex(command, options = {}, ws) {
     cwd,
     projectPath,
     model,
-    permissionMode = 'default'
+    permissionMode = 'plan'
   } = options;
 
   const workingDirectory = cwd || projectPath || process.cwd();

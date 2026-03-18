@@ -395,26 +395,21 @@
     },
     "codex": {
       "permissionMode": "Permission Mode",
-      "description": "Controls how Codex handles file modifications and command execution",
+      "description": "Controls whether Codex edits directly or stays in planning mode",
       "modes": {
-        "default": {
-          "title": "Default",
-          "description": "Only trusted commands (ls, cat, grep, git status, etc.) run automatically. Other commands are skipped. Can write to workspace."
-        },
         "acceptEdits": {
-          "title": "Accept Edits",
-          "description": "All commands run automatically within the workspace. Full auto mode with sandboxed execution."
+          "title": "Edit Mode",
+          "description": "All commands run automatically within the workspace. Codex can edit files directly."
         },
-        "bypassPermissions": {
-          "title": "Bypass Permissions",
-          "description": "Full system access with no restrictions. All commands run automatically with full disk and network access. Use with caution."
+        "plan": {
+          "title": "Plan Mode",
+          "description": "Codex analyzes and drafts an implementation plan without modifying files or running commands from chat."
         }
       },
       "technicalDetails": "Technical details",
       "technicalInfo": {
-        "default": "sandboxMode=workspace-write, approvalPolicy=untrusted. Trusted commands: cat, cd, grep, head, ls, pwd, tail, git status/log/diff/show, find (without -exec), etc.",
         "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never. All commands auto-execute within project directory.",
-        "bypassPermissions": "sandboxMode=danger-full-access, approvalPolicy=never. Full system access, use only in trusted environments.",
+        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. Chat prompts are prefixed with /plan so Codex stays in planning mode and avoids file edits.",
         "overrideNote": "You can override this per-session using the mode button in the chat interface."
       }
     },

@@ -374,26 +374,21 @@
     },
     "codex": {
       "permissionMode": "Berechtigungsmodus",
-      "description": "Steuert, wie Codex Dateiänderungen und Befehlsausführung handhabt",
+      "description": "Steuert, ob Codex direkt editiert oder im Planungsmodus bleibt",
       "modes": {
-        "default": {
-          "title": "Standard",
-          "description": "Nur vertrauenswürdige Befehle (ls, cat, grep, git status usw.) werden automatisch ausgeführt. Andere Befehle werden übersprungen. Kann in den Arbeitsbereich schreiben."
-        },
         "acceptEdits": {
-          "title": "Bearbeitungen akzeptieren",
-          "description": "Alle Befehle werden automatisch innerhalb des Arbeitsbereichs ausgeführt. Vollautomatischer Modus mit isolierter Ausführung."
+          "title": "Bearbeitungsmodus",
+          "description": "Alle Befehle werden automatisch innerhalb des Arbeitsbereichs ausgeführt. Codex kann Dateien direkt bearbeiten."
         },
-        "bypassPermissions": {
-          "title": "Berechtigungen umgehen",
-          "description": "Vollständiger Systemzugriff ohne Einschränkungen. Alle Befehle werden automatisch mit vollem Festplatten- und Netzwerkzugriff ausgeführt. Mit Vorsicht verwenden."
+        "plan": {
+          "title": "Planungsmodus",
+          "description": "Codex analysiert die Aufgabe und erstellt einen Implementierungsplan, ohne Dateien zu ändern oder Befehle aus dem Chat auszuführen."
         }
       },
       "technicalDetails": "Technische Details",
       "technicalInfo": {
-        "default": "sandboxMode=workspace-write, approvalPolicy=untrusted. Vertrauenswürdige Befehle: cat, cd, grep, head, ls, pwd, tail, git status/log/diff/show, find (ohne -exec) usw.",
         "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never. Alle Befehle werden automatisch innerhalb des Projektverzeichnisses ausgeführt.",
-        "bypassPermissions": "sandboxMode=danger-full-access, approvalPolicy=never. Vollständiger Systemzugriff, nur in vertrauenswürdigen Umgebungen verwenden.",
+        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. Chat-Prompts werden mit /plan gesendet, damit Codex im Planungsmodus bleibt und keine Dateien editiert.",
         "overrideNote": "Du kannst dies pro Sitzung über die Modusschaltfläche in der Chat-Oberfläche überschreiben."
       }
     },

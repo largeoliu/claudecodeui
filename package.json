@@ -24,7 +24,7 @@
     "url": "https://github.com/siteboon/claudecodeui/issues"
   },
   "scripts": {
-    "dev": "concurrently --kill-others \"npm run server\" \"npm run client\"",
+    "dev": "concurrently --kill-others \"HOST=127.0.0.1 npm run server\" \"HOST=127.0.0.1 npm run client\"",
     "server": "node server/index.js",
     "client": "vite",
     "build": "vite build",

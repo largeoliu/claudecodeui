@@ -3,17 +3,41 @@ import { authenticatedFetch } from '../../../utils/api';
 import { CLAUDE_MODELS, CODEX_MODELS, CURSOR_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
 import type { PendingPermissionRequest, PermissionMode } from '../types/types';
 import type { ProjectSession, SessionProvider } from '../../../types/app';
+import { safeLocalStorage } from '../utils/chatStorage';
+
+const CODEX_SETTINGS_KEY = 'codex-settings';
+const DEFAULT_CODEX_PERMISSION_MODE = 'plan';
+
+const isCodexPermissionMode = (value: unknown): value is 'acceptEdits' | 'plan' =>
+  value === 'acceptEdits' || value === 'plan';
+
+const getStoredProvider = (): SessionProvider =>
+  (safeLocalStorage.getItem('selected-provider') as SessionProvider) || 'claude';
+
+const getDefaultCodexPermissionMode = (): 'acceptEdits' | 'plan' => {
+  const savedSettings = safeLocalStorage.getItem(CODEX_SETTINGS_KEY);
+  if (!savedSettings) {
+    return DEFAULT_CODEX_PERMISSION_MODE;
+  }
+
+  try {
+    const parsed = JSON.parse(savedSettings) as { permissionMode?: unknown };
+    return isCodexPermissionMode(parsed.permissionMode) ? parsed.permissionMode : DEFAULT_CODEX_PERMISSION_MODE;
+  } catch {
+    return DEFAULT_CODEX_PERMISSION_MODE;
+  }
+};
 
 interface UseChatProviderStateArgs {
   selectedSession: ProjectSession | null;
 }
 
 export function useChatProviderState({ selectedSession }: UseChatProviderStateArgs) {
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
+  const [provider, setProvider] = useState<SessionProvider>(getStoredProvider);
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>(() => (
+    getStoredProvider() === 'codex' ? getDefaultCodexPermissionMode() : 'default'
+  ));
   const [pendingPermissionRequests, setPendingPermissionRequests] = useState<PendingPermissionRequest[]>([]);
-  const [provider, setProvider] = useState<SessionProvider>(() => {
-    return (localStorage.getItem('selected-provider') as SessionProvider) || 'claude';
-  });
   const [cursorModel, setCursorModel] = useState<string>(() => {
     return localStorage.getItem('cursor-model') || CURSOR_MODELS.DEFAULT;
   });
@@ -31,19 +55,29 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
 
   useEffect(() => {
     if (!selectedSession?.id) {
+      if (provider === 'codex') {
+        setPermissionMode(getDefaultCodexPermissionMode());
+      }
       return;
     }
 
     const savedMode = localStorage.getItem('permissionMode-' + selectedSession.id);
-    const validCodexModes = ['acceptEdits', 'plan'];
-    const defaultMode = (savedMode as PermissionMode) || 'default';
-
-    if (provider === 'codex' && !validCodexModes.includes(defaultMode)) {
-      setPermissionMode('acceptEdits');
+    if (provider === 'codex') {
+      setPermissionMode(isCodexPermissionMode(savedMode) ? savedMode : getDefaultCodexPermissionMode());
     } else {
-      setPermissionMode(defaultMode);
+      setPermissionMode((savedMode as PermissionMode) || 'default');
     }
   }, [selectedSession?.id, provider]);
+
+  // When provider changes to codex, ensure valid mode
+  useEffect(() => {
+    if (provider !== 'codex') {
+      return;
+    }
+    if (!isCodexPermissionMode(permissionMode)) {
+      setPermissionMode(getDefaultCodexPermissionMode());
+    }
+  }, [permissionMode, provider]);
 
   useEffect(() => {
     if (!selectedSession?.__provider || selectedSession.__provider === provider) {

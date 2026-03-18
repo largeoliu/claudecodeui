@@ -94,7 +94,7 @@ type CursorSettingsStorage = {
 };
 
 type CodexSettingsStorage = {
-  permissionMode?: CodexPermissionMode;
+  permissionMode?: string;
 };
 
 type NotificationPreferencesResponse = {
@@ -132,11 +132,11 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 };
 
 const toCodexPermissionMode = (value: unknown): CodexPermissionMode => {
-  if (value === 'acceptEdits' || value === 'bypassPermissions') {
+  if (value === 'acceptEdits' || value === 'plan') {
     return value;
   }
 
-  return 'default';
+  return 'plan';
 };
 
 const readCodeEditorSettings = (): CodeEditorSettingsState => ({
@@ -225,7 +225,7 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferencesState>(() => (
     createDefaultNotificationPreferences()
   ));
-  const [codexPermissionMode, setCodexPermissionMode] = useState<CodexPermissionMode>('default');
+  const [codexPermissionMode, setCodexPermissionMode] = useState<CodexPermissionMode>('plan');
   const [geminiPermissionMode, setGeminiPermissionMode] = useState<GeminiPermissionMode>('default');
 
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
@@ -717,7 +717,7 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
       setClaudePermissions(createEmptyClaudePermissions());
       setCursorPermissions(createEmptyCursorPermissions());
       setNotificationPreferences(createDefaultNotificationPreferences());
-      setCodexPermissionMode('default');
+      setCodexPermissionMode('plan');
       setProjectSortOrder('name');
     }
   }, [fetchCodexMcpServers, fetchCursorMcpServers, fetchMcpServers]);

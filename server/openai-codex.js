@@ -169,10 +169,10 @@ function mapPermissionModeToCodexOptions(permissionMode) {
         sandboxMode: 'workspace-write',
         approvalPolicy: 'never'
       };
-    case 'bypassPermissions':
+    case 'plan':
       return {
-        sandboxMode: 'danger-full-access',
-        approvalPolicy: 'never'
+        sandboxMode: 'workspace-write',
+        approvalPolicy: 'untrusted'
       };
     case 'default':
     default:

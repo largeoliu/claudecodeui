@@ -640,9 +640,10 @@ export function useChatComposerState({
           },
         });
       } else if (provider === 'codex') {
+        const codexCommand = permissionMode === 'plan' ? `/plan ${messageContent}` : messageContent;
         sendMessage({
           type: 'codex-command',
-          command: messageContent,
+          command: codexCommand,
           sessionId: effectiveSessionId,
           options: {
             cwd: resolvedProjectPath,
@@ -651,7 +652,7 @@ export function useChatComposerState({
             resume: Boolean(effectiveSessionId),
             model: codexModel,
             sessionSummary,
-            permissionMode: permissionMode === 'plan' ? 'default' : permissionMode,
+            permissionMode,
           },
         });
       } else if (provider === 'gemini') {

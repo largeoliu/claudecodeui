@@ -43,33 +43,25 @@ export default function ChatInputControls({
         type="button"
         onClick={onModeSwitch}
         className={`rounded-lg border px-2.5 py-1 text-sm font-medium transition-all duration-200 sm:px-3 sm:py-1.5 ${
-          permissionMode === 'default'
-            ? 'border-border/60 bg-muted/50 text-muted-foreground hover:bg-muted'
-            : permissionMode === 'acceptEdits'
-              ? 'border-green-300/60 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-600/40 dark:bg-green-900/15 dark:text-green-300 dark:hover:bg-green-900/25'
-              : permissionMode === 'bypassPermissions'
-                ? 'border-orange-300/60 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:border-orange-600/40 dark:bg-orange-900/15 dark:text-orange-300 dark:hover:bg-orange-900/25'
-                : 'border-primary/20 bg-primary/5 text-primary hover:bg-primary/10'
+          permissionMode === 'acceptEdits'
+            ? 'border-green-300/60 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-600/40 dark:bg-green-900/15 dark:text-green-300 dark:hover:bg-green-900/25'
+            : 'border-primary/20 bg-primary/5 text-primary hover:bg-primary/10'
         }`}
         title={t('input.clickToChangeMode')}
       >
         <div className="flex items-center gap-1.5">
           <div
             className={`h-1.5 w-1.5 rounded-full ${
-              permissionMode === 'default'
-                ? 'bg-muted-foreground'
-                : permissionMode === 'acceptEdits'
-                  ? 'bg-green-500'
-                  : permissionMode === 'bypassPermissions'
-                    ? 'bg-orange-500'
-                    : 'bg-primary'
+              permissionMode === 'acceptEdits'
+                ? 'bg-green-500'
+                : 'bg-primary'
             }`}
           />
           <span>
-            {permissionMode === 'default' && t('codex.modes.default')}
             {permissionMode === 'acceptEdits' && t('codex.modes.acceptEdits')}
-            {permissionMode === 'bypassPermissions' && t('codex.modes.bypassPermissions')}
             {permissionMode === 'plan' && t('codex.modes.plan')}
+            {permissionMode === 'default' && t('codex.modes.default')}
+            {permissionMode === 'bypassPermissions' && t('codex.modes.bypassPermissions')}
           </span>
         </div>
       </button>

@@ -86,7 +86,7 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   const cyclePermissionMode = useCallback(() => {
     const modes: PermissionMode[] =
       provider === 'codex'
-        ? ['default', 'acceptEdits', 'bypassPermissions']
+        ? ['acceptEdits', 'plan']
         : ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
 
     const currentIndex = modes.indexOf(permissionMode);

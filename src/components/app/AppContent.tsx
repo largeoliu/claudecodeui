@@ -7,7 +7,6 @@ import { useWebSocket } from '../../contexts/WebSocketContext';
 import { useDeviceSettings } from '../../hooks/useDeviceSettings';
 import { useSessionProtection } from '../../hooks/useSessionProtection';
 import { useProjectsState } from '../../hooks/useProjectsState';
-import MobileNav from './MobileNav';
 
 export default function AppContent() {
   const navigate = useNavigate();
@@ -183,14 +182,6 @@ export default function AppContent() {
           externalMessageUpdate={externalMessageUpdate}
         />
       </div>
-
-      {isMobile && (
-        <MobileNav
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          isInputFocused={isInputFocused}
-        />
-      )}
 
     </div>
   );

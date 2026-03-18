@@ -38,8 +38,6 @@ import { WebSocketServer, WebSocket } from 'ws';
 import os from 'os';
 import http from 'http';
 import cors from 'cors';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import { promises as fsPromises } from 'fs';
 import { spawn } from 'child_process';
 import pty from 'node-pty';
@@ -49,20 +47,10 @@ import mime from 'mime-types';
 import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations } from './projects.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
-import {
-    queryCodex,
-    abortCodexSession,
-    isCodexSessionActive,
-    getActiveCodexSessions,
-    reconnectCodexSessionWriter,
-    getPendingCodexRequests,
-    respondToCodexApproval,
-    respondToCodexUserInput,
-    respondToCodexCommandStdin,
-    getCodexThreadTokenUsage,
-} from './openai-codex.js';
+import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
 import { spawnGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli.js';
 import sessionManager from './sessionManager.js';
+import { getContextWindow, DEFAULT_CONTEXT_WINDOW } from '../shared/modelConstants.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
 import mcpRoutes from './routes/mcp.js';
@@ -345,39 +333,7 @@ const wss = new WebSocketServer({
 // Make WebSocket server available to routes
 app.locals.wss = wss;
 
-// Security: determine environment mode
-const isDev = process.env.NODE_ENV !== 'production';
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || (isDev ? true : 'https://code.club6.top');
-
-// CORS configuration
-app.use(cors({
-  exposedHeaders: ['X-Refreshed-Token'],
-  origin: isDev ? true : ALLOWED_ORIGIN,
-  credentials: !isDev,
-}));
-
-// Security headers
-app.use(helmet({
-  contentSecurityPolicy: !isDev,
-}));
-
-// Rate limiting - general API
-app.use('/api', rateLimit({
-  windowMs: isDev ? 5 * 60 * 1000 : 15 * 60 * 1000,
-  max: isDev ? 1000 : 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later.' },
-}));
-
-// Rate limiting - auth endpoints (stricter)
-app.use('/api/auth', rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isDev ? 100 : 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many login attempts, please try again later.' },
-}));
+app.use(cors({ exposedHeaders: ['X-Refreshed-Token'] }));
 app.use(express.json({
     limit: '50mb',
     type: (req) => {
@@ -1574,24 +1530,6 @@ function handleChatConnection(ws, request) {
                         rememberEntry: data.rememberEntry
                     });
                 }
-            } else if (data.type === 'codex-approval-response') {
-                if (data.requestId) {
-                    await respondToCodexApproval(data.requestId, {
-                        allow: Boolean(data.allow),
-                        rememberEntry: data.rememberEntry,
-                    });
-                }
-            } else if (data.type === 'codex-user-input-response') {
-                if (data.requestId) {
-                    await respondToCodexUserInput(data.requestId, data.answers || {});
-                }
-            } else if (data.type === 'codex-command-stdin-response') {
-                if (data.requestId) {
-                    await respondToCodexCommandStdin(
-                        data.requestId,
-                        typeof data.text === 'string' ? data.text : '',
-                    );
-                }
             } else if (data.type === 'cursor-abort') {
                 console.log('[DEBUG] Abort Cursor session:', data.sessionId);
                 const success = abortCursorSession(data.sessionId);
@@ -1611,9 +1549,6 @@ function handleChatConnection(ws, request) {
                     isActive = isCursorSessionActive(sessionId);
                 } else if (provider === 'codex') {
                     isActive = isCodexSessionActive(sessionId);
-                    if (isActive) {
-                        reconnectCodexSessionWriter(sessionId, writer);
-                    }
                 } else if (provider === 'gemini') {
                     isActive = isGeminiSessionActive(sessionId);
                 } else {
@@ -1642,18 +1577,6 @@ function handleChatConnection(ws, request) {
                         sessionId,
                         data: pending
                     });
-                } else if (sessionId) {
-                    const pending = getPendingCodexRequests(sessionId);
-                    if (pending.length > 0 || isCodexSessionActive(sessionId)) {
-                        if (isCodexSessionActive(sessionId)) {
-                            reconnectCodexSessionWriter(sessionId, writer);
-                        }
-                        writer.send({
-                            type: 'pending-permissions-response',
-                            sessionId,
-                            data: pending
-                        });
-                    }
                 }
             } else if (data.type === 'get-active-sessions') {
                 // Get all currently active sessions
@@ -1813,9 +1736,14 @@ function handleShellConnection(ws) {
                             shellCommand = 'cursor-agent';
                         }
                     } else if (provider === 'codex') {
-                        // Codex resume should fail loudly when the thread is gone; do not fall back to creating a new one.
+                        // Use codex command; attempt to resume and fall back to a new session when the resume fails.
                         if (hasSession && sessionId) {
-                            shellCommand = `codex resume "${sessionId}"`;
+                            if (os.platform() === 'win32') {
+                                // PowerShell syntax for fallback
+                                shellCommand = `codex resume "${sessionId}"; if ($LASTEXITCODE -ne 0) { codex }`;
+                            } else {
+                                shellCommand = `codex resume "${sessionId}" || codex`;
+                            }
                         } else {
                             shellCommand = 'codex';
                         }
@@ -2308,19 +2236,88 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
 
         // Handle Codex sessions
         if (provider === 'codex') {
-            const tokenUsage = getCodexThreadTokenUsage(safeSessionId);
+            const codexSessionsDir = path.join(homeDir, '.codex', 'sessions');
 
-            if (!tokenUsage) {
-                return res.json({
-                    used: 0,
-                    total: 0,
-                    breakdown: { input: 0, cacheRead: 0, output: 0, reasoning: 0 },
-                    unsupported: true,
-                    message: 'Token usage is only available for active interactive Codex threads'
-                });
+            // Find the session file by searching for the session ID
+            const findSessionFile = async (dir) => {
+                try {
+                    const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+                    for (const entry of entries) {
+                        const fullPath = path.join(dir, entry.name);
+                        if (entry.isDirectory()) {
+                            const found = await findSessionFile(fullPath);
+                            if (found) return found;
+                        } else if (entry.name.includes(safeSessionId) && entry.name.endsWith('.jsonl')) {
+                            return fullPath;
+                        }
+                    }
+                } catch (error) {
+                    // Skip directories we can't read
+                }
+                return null;
+            };
+
+            const sessionFilePath = await findSessionFile(codexSessionsDir);
+
+            if (!sessionFilePath) {
+                return res.status(404).json({ error: 'Codex session file not found', sessionId: safeSessionId });
             }
 
-            return res.json(tokenUsage);
+            // Read and parse the Codex JSONL file
+            let fileContent;
+            try {
+                fileContent = await fsPromises.readFile(sessionFilePath, 'utf8');
+            } catch (error) {
+                if (error.code === 'ENOENT') {
+                    return res.status(404).json({ error: 'Session file not found', path: sessionFilePath });
+                }
+                throw error;
+            }
+            const lines = fileContent.trim().split('\n');
+
+            // First pass: extract session model from session_meta
+            let sessionModel = null;
+            for (let i = 0; i < lines.length; i++) {
+                try {
+                    const entry = JSON.parse(lines[i]);
+                    if (entry.type === 'session_meta' && entry.payload) {
+                        sessionModel = entry.payload.model || entry.payload.model_provider || null;
+                        break;
+                    }
+                } catch (parseError) {
+                    continue;
+                }
+            }
+
+            // Second pass: find the latest token_count event with info (scan from end)
+            let totalTokens = 0;
+            let contextWindow = getContextWindow(sessionModel);
+
+            for (let i = lines.length - 1; i >= 0; i--) {
+                try {
+                    const entry = JSON.parse(lines[i]);
+
+                    // Codex stores token info in event_msg with type: "token_count"
+                    if (entry.type === 'event_msg' && entry.payload?.type === 'token_count' && entry.payload?.info) {
+                        const tokenInfo = entry.payload.info;
+                        if (tokenInfo.total_token_usage) {
+                            totalTokens = tokenInfo.total_token_usage.total_tokens || 0;
+                        }
+                        if (tokenInfo.model_context_window) {
+                            contextWindow = tokenInfo.model_context_window;
+                        }
+                        break; // Stop after finding the latest token count
+                    }
+                } catch (parseError) {
+                    // Skip lines that can't be parsed
+                    continue;
+                }
+            }
+
+            return res.json({
+                used: totalTokens,
+                total: contextWindow
+            });
         }
 
         // Handle Claude sessions (default)

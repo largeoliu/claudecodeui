@@ -4,6 +4,72 @@
  */
 
 /**
+ * Model Context Windows (tokens)
+ * Reference: https://platform.openai.com/docs/models
+ * Note: Values may change over time; update as needed.
+ */
+export const MODEL_CONTEXT_WINDOWS = {
+  // Claude (Anthropic) models - all Claude 4.x models have 200K context
+  // SDK format keys
+  'sonnet': 200000,
+  'opus': 200000,
+  'haiku': 200000,
+  'opusplan': 200000,
+  'sonnet[1m]': 1050000,
+
+  // Cursor models (mixed providers)
+  'opus-4.6-thinking': 200000,
+  'opus-4.5-thinking': 200000,
+  'sonnet-4.5': 200000,
+  'sonnet-4.5-thinking': 200000,
+  'opus-4.5': 200000,
+  'opus-4.1': 200000,
+  'composer-1': 200000,
+  'auto': 200000,
+
+  // Cursor GPT models
+  'gpt-5.3-codex': 400000,
+  'gpt-5.2-high': 400000,
+  'gpt-5.2': 400000,
+  'gpt-5.1': 400000,
+  'gpt-5.1-high': 400000,
+  'gpt-5.1-codex': 400000,
+  'gpt-5.1-codex-high': 400000,
+  'gpt-5.1-codex-max': 2000000,
+  'gpt-5.1-codex-max-high': 2000000,
+
+  // Codex (OpenAI) models
+  'gpt-5.4': 1050000,
+  'gpt-5.3-codex': 400000,
+  'gpt-5.2-codex': 400000,
+  'gpt-5.2': 400000,
+  'gpt-5.1-codex-max': 2000000,
+  'o3': 200000,
+  'o4-mini': 128000,
+
+  // Gemini models - 2.5+ models have 1M context, 2.0 varies
+  'gemini-3.1-pro-preview': 1050000,
+  'gemini-3-pro-preview': 1050000,
+  'gemini-3-flash-preview': 1050000,
+  'gemini-3-pro': 1050000,
+  'gemini-2.5-flash': 1050000,
+  'gemini-2.5-pro': 1050000,
+  'gemini-2.0-flash-lite': 1050000,
+  'gemini-2.0-flash': 128000,
+  'gemini-2.0-pro-exp': 32000,
+  'gemini-2.0-flash-thinking-exp': 1050000,
+
+  // Other
+  'grok': 128000,
+};
+
+export const DEFAULT_CONTEXT_WINDOW = 200000;
+
+export function getContextWindow(model) {
+  return MODEL_CONTEXT_WINDOWS[model] ?? DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
  * Claude (Anthropic) Models
  *
  * Note: Claude uses two different formats:

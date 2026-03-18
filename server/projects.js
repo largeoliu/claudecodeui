@@ -67,6 +67,7 @@ import { open } from 'sqlite';
 import os from 'os';
 import sessionManager from './sessionManager.js';
 import { applyCustomSessionNames } from './database/db.js';
+import { getContextWindow } from '../shared/modelConstants.js';
 
 // Import TaskMaster detection functions
 async function detectTaskMasterFolder(projectPath) {
@@ -1547,6 +1548,7 @@ async function parseCodexSessionFile(filePath) {
               timestamp: entry.timestamp,
               git: entry.payload.git
             };
+            sessionModel = entry.payload.model || entry.payload.model_provider;
           }
 
           // Count visible user messages and extract summary from the latest plain user input.
@@ -1619,6 +1621,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
     const messages = [];
     let tokenUsage = null;
+    let sessionModel = null;
     const fileStream = fsSync.createReadStream(sessionFilePath);
     const rl = readline.createInterface({
       input: fileStream,
@@ -1651,9 +1654,10 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
           if (entry.type === 'event_msg' && entry.payload?.type === 'token_count' && entry.payload?.info) {
             const info = entry.payload.info;
             if (info.total_token_usage) {
+              const contextWindow = info.model_context_window || getContextWindow(sessionModel);
               tokenUsage = {
                 used: info.total_token_usage.total_tokens || 0,
-                total: info.model_context_window || 200000
+                total: contextWindow
               };
             }
           }

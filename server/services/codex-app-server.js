@@ -7,6 +7,7 @@ import sqlite3 from 'sqlite3';
 const REQUEST_TIMEOUT_MS = 30000;
 const CODEX_APP_SERVER_ARGS = ['app-server', '--listen', 'stdio://'];
 const INTERACTIVE_SOURCE_KINDS = ['cli', 'vscode', 'appServer'];
+const SUPPORTED_REASONING_EFFORTS = new Set(['low', 'medium', 'high']);
 
 function createDeferred() {
   let resolve;
@@ -106,6 +107,15 @@ function normalizeInputItems(input) {
       text_elements: [],
     },
   ];
+}
+
+function normalizeReasoningEffort(value) {
+  return typeof value === 'string' && SUPPORTED_REASONING_EFFORTS.has(value) ? value : null;
+}
+
+function shouldRetryWithoutReasoning(error) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  return /reasoning|reasoning_effort|unknown field|invalid params?|unsupported|unexpected|unrecognized/i.test(message);
 }
 
 function normalizeAppServerError(error, fallbackMessage = 'Codex request failed') {
@@ -1082,13 +1092,31 @@ class CodexAppServer {
       this.registerWriter(threadId, writer);
     }
 
-    const result = await this.sendRequest('turn/start', {
+    const requestParams = {
       threadId,
       input: normalizeInputItems(input),
       cwd: options.cwd || null,
       approvalPolicy: options.approvalPolicy || null,
       model: options.model || null,
-    });
+    };
+    const normalizedReasoningEffort = normalizeReasoningEffort(options.reasoningEffort);
+
+    if (normalizedReasoningEffort) {
+      requestParams.reasoningEffort = normalizedReasoningEffort;
+    }
+
+    let result;
+    try {
+      result = await this.sendRequest('turn/start', requestParams);
+    } catch (error) {
+      if (!normalizedReasoningEffort || !shouldRetryWithoutReasoning(error)) {
+        throw error;
+      }
+
+      console.warn('[CodexAppServer] Retrying turn without reasoning effort:', error.message);
+      delete requestParams.reasoningEffort;
+      result = await this.sendRequest('turn/start', requestParams);
+    }
 
     const turn = result?.turn || null;
     const deferred = createDeferred();

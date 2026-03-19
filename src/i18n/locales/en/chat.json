@@ -91,6 +91,29 @@
       "acceptEdits": "Edit Mode",
       "plan": "Plan Mode"
     },
+    "reasoning": {
+      "title": "Reasoning Effort",
+      "shortLabel": "Reasoning",
+      "description": "Control how much Codex thinks before answering.",
+      "buttonTitle": "Codex reasoning effort: {{mode}}",
+      "active": "Active",
+      "tipLabel": "Tip:",
+      "tip": "Higher effort can improve complex tasks, but usually takes longer.",
+      "modes": {
+        "low": {
+          "name": "Low",
+          "description": "Faster responses for routine work."
+        },
+        "medium": {
+          "name": "Medium",
+          "description": "Balanced speed and depth for most tasks."
+        },
+        "high": {
+          "name": "High",
+          "description": "Deeper reasoning for harder problems."
+        }
+      }
+    },
     "descriptions": {
       "acceptEdits": "All commands run automatically within the workspace. Full auto mode with sandboxed execution.",
       "plan": "Plan mode - only analyzes code and creates plans, no file modifications or command execution"

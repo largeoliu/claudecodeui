@@ -14,6 +14,7 @@ export async function queryCodex(command, options = {}, writer) {
     projectPath,
     model,
     permissionMode = 'plan',
+    reasoningEffort,
   } = options;
 
   const workingDirectory = cwd || projectPath || process.cwd();
@@ -65,6 +66,7 @@ export async function queryCodex(command, options = {}, writer) {
         cwd: workingDirectory,
         approvalPolicy,
         model,
+        reasoningEffort,
       },
       writer,
     );

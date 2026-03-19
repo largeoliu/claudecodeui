@@ -4,6 +4,11 @@ import { CLAUDE_MODELS, CODEX_MODELS, CURSOR_MODELS, GEMINI_MODELS } from '../..
 import type { PendingPermissionRequest, PermissionMode } from '../types/types';
 import type { ProjectSession, SessionProvider } from '../../../types/app';
 import { safeLocalStorage } from '../utils/chatStorage';
+import {
+  DEFAULT_CODEX_REASONING_EFFORT,
+  isCodexReasoningEffort,
+  type CodexReasoningEffort,
+} from '../constants/codexReasoningEfforts';
 
 const CODEX_SETTINGS_KEY = 'codex-settings';
 const DEFAULT_CODEX_PERMISSION_MODE = 'plan';
@@ -14,18 +19,28 @@ const isCodexPermissionMode = (value: unknown): value is 'acceptEdits' | 'plan' 
 const getStoredProvider = (): SessionProvider =>
   (safeLocalStorage.getItem('selected-provider') as SessionProvider) || 'claude';
 
-const getDefaultCodexPermissionMode = (): 'acceptEdits' | 'plan' => {
+const readStoredCodexSettings = (): { permissionMode?: unknown; reasoningEffort?: unknown } => {
   const savedSettings = safeLocalStorage.getItem(CODEX_SETTINGS_KEY);
   if (!savedSettings) {
-    return DEFAULT_CODEX_PERMISSION_MODE;
+    return {};
   }
 
   try {
-    const parsed = JSON.parse(savedSettings) as { permissionMode?: unknown };
-    return isCodexPermissionMode(parsed.permissionMode) ? parsed.permissionMode : DEFAULT_CODEX_PERMISSION_MODE;
+    const parsed = JSON.parse(savedSettings) as Record<string, unknown>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
-    return DEFAULT_CODEX_PERMISSION_MODE;
+    return {};
   }
+};
+
+const getDefaultCodexPermissionMode = (): 'acceptEdits' | 'plan' => {
+  const parsed = readStoredCodexSettings();
+  return isCodexPermissionMode(parsed.permissionMode) ? parsed.permissionMode : DEFAULT_CODEX_PERMISSION_MODE;
+};
+
+const getDefaultCodexReasoningEffort = (): CodexReasoningEffort => {
+  const parsed = readStoredCodexSettings();
+  return isCodexReasoningEffort(parsed.reasoningEffort) ? parsed.reasoningEffort : DEFAULT_CODEX_REASONING_EFFORT;
 };
 
 interface UseChatProviderStateArgs {
@@ -37,6 +52,7 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(() => (
     getStoredProvider() === 'codex' ? getDefaultCodexPermissionMode() : 'default'
   ));
+  const [codexReasoningEffort, setCodexReasoningEffort] = useState<CodexReasoningEffort>(getDefaultCodexReasoningEffort);
   const [pendingPermissionRequests, setPendingPermissionRequests] = useState<PendingPermissionRequest[]>([]);
   const [cursorModel, setCursorModel] = useState<string>(() => {
     return localStorage.getItem('cursor-model') || CURSOR_MODELS.DEFAULT;
@@ -52,6 +68,7 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   });
 
   const lastProviderRef = useRef(provider);
+  const hasPersistedCodexReasoningRef = useRef(false);
 
   useEffect(() => {
     if (!selectedSession?.id) {
@@ -124,6 +141,20 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
       });
   }, [provider]);
 
+  useEffect(() => {
+    if (!hasPersistedCodexReasoningRef.current) {
+      hasPersistedCodexReasoningRef.current = true;
+      return;
+    }
+
+    const existingSettings = readStoredCodexSettings();
+    safeLocalStorage.setItem(CODEX_SETTINGS_KEY, JSON.stringify({
+      ...existingSettings,
+      reasoningEffort: codexReasoningEffort,
+      lastUpdated: new Date().toISOString(),
+    }));
+  }, [codexReasoningEffort]);
+
   const cyclePermissionMode = useCallback(() => {
     const modes: PermissionMode[] =
       provider === 'codex'
@@ -149,6 +180,8 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     setClaudeModel,
     codexModel,
     setCodexModel,
+    codexReasoningEffort,
+    setCodexReasoningEffort,
     geminiModel,
     setGeminiModel,
     permissionMode,

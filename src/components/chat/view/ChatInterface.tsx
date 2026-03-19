@@ -64,6 +64,8 @@ function ChatInterface({
     setClaudeModel,
     codexModel,
     setCodexModel,
+    codexReasoningEffort,
+    setCodexReasoningEffort,
     geminiModel,
     setGeminiModel,
     permissionMode,
@@ -173,10 +175,11 @@ function ChatInterface({
     provider,
     permissionMode,
     cyclePermissionMode,
-    cursorModel,
-    claudeModel,
-    codexModel,
-    geminiModel,
+     cursorModel,
+     claudeModel,
+     codexModel,
+      codexReasoningEffort,
+     geminiModel,
     isLoading,
     canAbortSession,
     tokenBudget,
@@ -352,6 +355,8 @@ function ChatInterface({
           onModeSwitch={cyclePermissionMode}
           thinkingMode={thinkingMode}
           setThinkingMode={setThinkingMode}
+          codexReasoningEffort={codexReasoningEffort}
+          setCodexReasoningEffort={setCodexReasoningEffort}
           tokenBudget={tokenBudget}
           slashCommandsCount={slashCommandsCount}
           onToggleCommandMenu={handleToggleCommandMenu}

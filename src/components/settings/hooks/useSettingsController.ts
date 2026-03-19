@@ -95,6 +95,8 @@ type CursorSettingsStorage = {
 
 type CodexSettingsStorage = {
   permissionMode?: string;
+  reasoningEffort?: string;
+  lastUpdated?: string;
 };
 
 type NotificationPreferencesResponse = {
@@ -757,7 +759,13 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
         lastUpdated: now,
       }));
 
+      const existingCodexSettings = parseJson<CodexSettingsStorage>(
+        localStorage.getItem('codex-settings'),
+        {},
+      );
+
       localStorage.setItem('codex-settings', JSON.stringify({
+        ...existingCodexSettings,
         permissionMode: codexPermissionMode,
         lastUpdated: now,
       }));

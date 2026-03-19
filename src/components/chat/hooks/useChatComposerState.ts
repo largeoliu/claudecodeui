@@ -11,6 +11,7 @@ import type {
 } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { authenticatedFetch } from '../../../utils/api';
+import type { CodexReasoningEffort } from '../constants/codexReasoningEfforts';
 import { thinkingModes } from '../constants/thinkingModes';
 import { grantClaudeToolPermission } from '../utils/chatPermissions';
 import { safeLocalStorage } from '../utils/chatStorage';
@@ -39,6 +40,7 @@ interface UseChatComposerStateArgs {
   cursorModel: string;
   claudeModel: string;
   codexModel: string;
+  codexReasoningEffort: CodexReasoningEffort;
   geminiModel: string;
   isLoading: boolean;
   canAbortSession: boolean;
@@ -111,6 +113,7 @@ export function useChatComposerState({
   cursorModel,
   claudeModel,
   codexModel,
+  codexReasoningEffort,
   geminiModel,
   isLoading,
   canAbortSession,
@@ -522,7 +525,7 @@ export function useChatComposerState({
 
       let messageContent = currentInput;
       const selectedThinkingMode = thinkingModes.find((mode: { id: string; prefix?: string }) => mode.id === thinkingMode);
-      if (selectedThinkingMode && selectedThinkingMode.prefix) {
+      if (provider === 'claude' && selectedThinkingMode && selectedThinkingMode.prefix) {
         messageContent = `${selectedThinkingMode.prefix}: ${currentInput}`;
       }
 
@@ -653,6 +656,7 @@ export function useChatComposerState({
             sessionId: effectiveSessionId,
             resume: Boolean(effectiveSessionId),
             model: codexModel,
+            reasoningEffort: codexReasoningEffort,
             sessionSummary,
             permissionMode,
           },
@@ -698,7 +702,9 @@ export function useChatComposerState({
       setUploadingImages(new Map());
       setImageErrors(new Map());
       setIsTextareaExpanded(false);
-      setThinkingMode('none');
+      if (provider === 'claude') {
+        setThinkingMode('none');
+      }
 
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
@@ -711,6 +717,7 @@ export function useChatComposerState({
       attachedImages,
       claudeModel,
       codexModel,
+      codexReasoningEffort,
       currentSessionId,
       cursorModel,
       executeCommand,

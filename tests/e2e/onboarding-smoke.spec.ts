@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 const allowedConsoleErrorPatterns = [
   /Failed to check TaskMaster installation status/,
   /Failed to load resource: the server responded with a status of \d+ \(.+\)/,
+  /Failed to load resource: the server responded with a status of 403 \(\)/,
   /Error fetching MCP servers:/,
 ];
 
@@ -12,6 +13,7 @@ const allowedHttpErrors = [
   { status: 401, pattern: /\/api\/plugins$/ },
   { pattern: /\/api\/taskmaster\/installation-status$/ },
   { status: 500, pattern: /\/api\/mcp\/cli\/list$/ },
+  { status: 403, pattern: /\/repos\/siteboon\/claudecodeui\/releases\/latest$/ },
 ];
 
 function isAllowedHttpError(status: number, urlString: string) {
@@ -67,7 +69,11 @@ function trackUnexpectedRuntimeIssues(page: Page) {
   return { consoleErrors, pageErrors, httpErrors };
 }
 
-test('user can complete onboarding and open settings', async ({ page }) => {
+test('user can complete onboarding and open settings', async ({ page, request }) => {
+  const authStatus = await request.get('/api/auth/status');
+  const authPayload = await authStatus.json();
+  test.skip(!authPayload?.needsSetup, 'Onboarding smoke requires a fresh auth database.');
+
   const runtimeIssues = trackUnexpectedRuntimeIssues(page);
   const uniqueSuffix = `${Date.now()}`;
   const username = `e2e_${uniqueSuffix}`;

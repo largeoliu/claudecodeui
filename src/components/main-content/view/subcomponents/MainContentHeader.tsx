@@ -9,6 +9,7 @@ export default function MainContentHeader({
   setActiveTab,
   selectedProject,
   selectedSession,
+  processingSessions,
   shouldShowTasksTab,
   isMobile,
   onMenuClick,
@@ -42,6 +43,7 @@ export default function MainContentHeader({
             activeTab={activeTab}
             selectedProject={selectedProject}
             selectedSession={selectedSession}
+            processingSessions={processingSessions}
             shouldShowTasksTab={shouldShowTasksTab}
           />
         </div>

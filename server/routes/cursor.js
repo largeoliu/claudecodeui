@@ -375,29 +375,22 @@ router.get('/sessions', async (req, res) => {
       const sessionPath = path.join(cursorChatsPath, sessionId);
       const storeDbPath = path.join(sessionPath, 'store.db');
       let dbStatMtimeMs = null;
-      
       try {
-        // Check if store.db exists
-        await fs.access(storeDbPath);
-        
-        // Capture store.db mtime as a reliable fallback timestamp (last activity)
-        try {
-          const stat = await fs.stat(storeDbPath);
-          dbStatMtimeMs = stat.mtimeMs;
-        } catch (_) {}
-
-        // Open SQLite database
-        const db = await open({
+        const stat = await fs.stat(storeDbPath);
+        dbStatMtimeMs = stat.mtimeMs;
+      } catch (_) {}
+      let db;
+      try {
+        db = await open({
           filename: storeDbPath,
           driver: sqlite3.Database,
           mode: sqlite3.OPEN_READONLY
         });
-        
-        // Get metadata from meta table
+
         const metaRows = await db.all(`
           SELECT key, value FROM meta
         `);
-        
+
         let sessionData = {
           id: sessionId,
           name: 'Untitled Session',
@@ -407,25 +400,20 @@ router.get('/sessions', async (req, res) => {
           lastMessage: null,
           messageCount: 0
         };
-        
-        // Parse meta table entries
+
         for (const row of metaRows) {
           if (row.value) {
             try {
-              // Try to decode as hex-encoded JSON
               const hexMatch = row.value.toString().match(/^[0-9a-fA-F]+$/);
               if (hexMatch) {
                 const jsonStr = Buffer.from(row.value, 'hex').toString('utf8');
                 const data = JSON.parse(jsonStr);
-                
+
                 if (row.key === 'agent') {
                   sessionData.name = data.name || sessionData.name;
-                  // Normalize createdAt to ISO string in milliseconds
                   let createdAt = data.createdAt;
                   if (typeof createdAt === 'number') {
-                    if (createdAt < 1e12) {
-                      createdAt = createdAt * 1000; // seconds -> ms
-                    }
+                    if (createdAt < 1e12) createdAt = createdAt * 1000;
                     sessionData.createdAt = new Date(createdAt).toISOString();
                   } else if (typeof createdAt === 'string') {
                     const n = Number(createdAt);
@@ -433,7 +421,6 @@ router.get('/sessions', async (req, res) => {
                       const ms = n < 1e12 ? n * 1000 : n;
                       sessionData.createdAt = new Date(ms).toISOString();
                     } else {
-                      // Assume it's already an ISO/date string
                       const d = new Date(createdAt);
                       sessionData.createdAt = isNaN(d.getTime()) ? null : d.toISOString();
                     }
@@ -445,7 +432,6 @@ router.get('/sessions', async (req, res) => {
                   sessionData.latestRootBlobId = data.latestRootBlobId;
                 }
               } else {
-                // If not hex, use raw value for simple keys
                 if (row.key === 'name') {
                   sessionData.name = row.value.toString();
                 }
@@ -455,30 +441,26 @@ router.get('/sessions', async (req, res) => {
             }
           }
         }
-        
-        // Get message count from JSON blobs only (actual messages, not DAG structure)
+
         try {
           const blobCount = await db.get(`
-            SELECT COUNT(*) as count 
-            FROM blobs 
+            SELECT COUNT(*) as count
+            FROM blobs
             WHERE substr(data, 1, 1) = X'7B'
           `);
           sessionData.messageCount = blobCount.count;
-          
-          // Get the most recent JSON blob for preview (actual message, not DAG structure)
+
           const lastBlob = await db.get(`
-            SELECT data FROM blobs 
+            SELECT data FROM blobs
             WHERE substr(data, 1, 1) = X'7B'
-            ORDER BY rowid DESC 
+            ORDER BY rowid DESC
             LIMIT 1
           `);
-          
+
           if (lastBlob && lastBlob.data) {
             try {
-              // Try to extract readable preview from blob (may contain binary with embedded JSON)
               const raw = lastBlob.data.toString('utf8');
               let preview = '';
-              // Attempt direct JSON parse
               try {
                 const parsed = JSON.parse(raw);
                 if (parsed?.content) {
@@ -491,7 +473,6 @@ router.get('/sessions', async (req, res) => {
                 }
               } catch (_) {}
               if (!preview) {
-                // Strip non-printable and try to find JSON chunk
                 const cleaned = raw.replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
                 const s = cleaned;
                 const start = s.indexOf('{');
@@ -525,23 +506,21 @@ router.get('/sessions', async (req, res) => {
         } catch (e) {
           console.log('Could not read blobs:', e.message);
         }
-        
-        await db.close();
 
-        // Finalize createdAt: use parsed meta value when valid, else fall back to store.db mtime
         if (!sessionData.createdAt) {
           if (dbStatMtimeMs && Number.isFinite(dbStatMtimeMs)) {
             sessionData.createdAt = new Date(dbStatMtimeMs).toISOString();
           }
         }
-        
+
         sessions.push(sessionData);
-        
       } catch (error) {
         console.log(`Could not read session ${sessionId}:`, error.message);
+      } finally {
+        if (db) await db.close().catch(() => {});
       }
     }
-    
+
     // Fallback: ensure createdAt is a valid ISO string (use session directory mtime as last resort)
     for (const s of sessions) {
       if (!s.createdAt) {
@@ -581,52 +560,45 @@ router.get('/sessions', async (req, res) => {
 
 // GET /api/cursor/sessions/:sessionId - Get specific Cursor session from SQLite
 router.get('/sessions/:sessionId', async (req, res) => {
+  const { sessionId } = req.params;
+  const { projectPath } = req.query;
+
+  const cwdId = crypto.createHash('md5').update(projectPath || process.cwd()).digest('hex');
+  const storeDbPath = path.join(os.homedir(), '.cursor', 'chats', cwdId, sessionId, 'store.db');
+
+  let db;
   try {
-    const { sessionId } = req.params;
-    const { projectPath } = req.query;
-    
-    // Calculate cwdID hash for the project path
-    const cwdId = crypto.createHash('md5').update(projectPath || process.cwd()).digest('hex');
-    const storeDbPath = path.join(os.homedir(), '.cursor', 'chats', cwdId, sessionId, 'store.db');
-    
-    
-    // Open SQLite database
-    const db = await open({
+    db = await open({
       filename: storeDbPath,
       driver: sqlite3.Database,
       mode: sqlite3.OPEN_READONLY
     });
-    
-    // Get all blobs to build the DAG structure
+
     const allBlobs = await db.all(`
       SELECT rowid, id, data FROM blobs
     `);
-    
-    // Build the DAG structure from parent-child relationships
-    const blobMap = new Map(); // id -> blob data
-    const parentRefs = new Map(); // blob id -> [parent blob ids]
-    const childRefs = new Map(); // blob id -> [child blob ids]
-    const jsonBlobs = []; // Clean JSON messages
-    
+
+    const blobMap = new Map();
+    const parentRefs = new Map();
+    const childRefs = new Map();
+    const jsonBlobs = [];
+
     for (const blob of allBlobs) {
       blobMap.set(blob.id, blob);
-      
-      // Check if this is a JSON blob (actual message) or protobuf (DAG structure)
-      if (blob.data && blob.data[0] === 0x7B) { // Starts with '{' - JSON blob
+
+      if (blob.data && blob.data[0] === 0x7B) {
         try {
           const parsed = JSON.parse(blob.data.toString('utf8'));
           jsonBlobs.push({ ...blob, parsed });
         } catch (e) {
           console.log('Failed to parse JSON blob:', blob.rowid);
         }
-      } else if (blob.data) { // Protobuf blob - extract parent references
+      } else if (blob.data) {
         const parents = [];
         let i = 0;
-        
-        // Scan for parent references (0x0A 0x20 followed by 32-byte hash)
         while (i < blob.data.length - 33) {
-          if (blob.data[i] === 0x0A && blob.data[i+1] === 0x20) {
-            const parentHash = blob.data.slice(i+2, i+34).toString('hex');
+          if (blob.data[i] === 0x0A && blob.data[i + 1] === 0x20) {
+            const parentHash = blob.data.slice(i + 2, i + 34).toString('hex');
             if (blobMap.has(parentHash)) {
               parents.push(parentHash);
             }
@@ -635,10 +607,9 @@ router.get('/sessions/:sessionId', async (req, res) => {
             i++;
           }
         }
-        
+
         if (parents.length > 0) {
           parentRefs.set(blob.id, parents);
-          // Update child references
           for (const parentId of parents) {
             if (!childRefs.has(parentId)) {
               childRefs.set(parentId, []);
@@ -648,49 +619,38 @@ router.get('/sessions/:sessionId', async (req, res) => {
         }
       }
     }
-    
-    // Perform topological sort to get chronological order
+
     const visited = new Set();
     const sorted = [];
-    
-    // DFS-based topological sort
+
     function visit(nodeId) {
       if (visited.has(nodeId)) return;
       visited.add(nodeId);
-      
-      // Visit all parents first (dependencies)
       const parents = parentRefs.get(nodeId) || [];
       for (const parentId of parents) {
         visit(parentId);
       }
-      
-      // Add this node after all its parents
       const blob = blobMap.get(nodeId);
       if (blob) {
         sorted.push(blob);
       }
     }
-    
-    // Start with nodes that have no parents (roots)
+
     for (const blob of allBlobs) {
       if (!parentRefs.has(blob.id)) {
         visit(blob.id);
       }
     }
-    
-    // Visit any remaining nodes (disconnected components)
+
     for (const blob of allBlobs) {
       visit(blob.id);
     }
-    
-    // Now extract JSON messages in the order they appear in the sorted DAG
-    const messageOrder = new Map(); // JSON blob id -> order index
+
+    const messageOrder = new Map();
     let orderIndex = 0;
-    
+
     for (const blob of sorted) {
-      // Check if this blob references any JSON messages
-      if (blob.data && blob.data[0] !== 0x7B) { // Protobuf blob
-        // Look for JSON blob references
+      if (blob.data && blob.data[0] !== 0x7B) {
         for (const jsonBlob of jsonBlobs) {
           try {
             const jsonIdBytes = Buffer.from(jsonBlob.id, 'hex');
@@ -699,40 +659,32 @@ router.get('/sessions/:sessionId', async (req, res) => {
                 messageOrder.set(jsonBlob.id, orderIndex++);
               }
             }
-          } catch (e) {
-            // Skip if can't convert ID
-          }
+          } catch (e) {}
         }
       }
     }
-    
-    // Sort JSON blobs by their appearance order in the DAG
+
     const sortedJsonBlobs = jsonBlobs.sort((a, b) => {
       const orderA = messageOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
       const orderB = messageOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
       if (orderA !== orderB) return orderA - orderB;
-      // Fallback to rowid if not in order map
       return a.rowid - b.rowid;
     });
-    
-    // Use sorted JSON blobs
+
     const blobs = sortedJsonBlobs.map((blob, idx) => ({
       ...blob,
       sequence_num: idx + 1,
       original_rowid: blob.rowid
     }));
-    
-    // Get metadata from meta table
+
     const metaRows = await db.all(`
       SELECT key, value FROM meta
     `);
-    
-    // Parse metadata
+
     let metadata = {};
     for (const row of metaRows) {
       if (row.value) {
         try {
-          // Try to decode as hex-encoded JSON
           const hexMatch = row.value.toString().match(/^[0-9a-fA-F]+$/);
           if (hexMatch) {
             const jsonStr = Buffer.from(row.value, 'hex').toString('utf8');
@@ -745,38 +697,30 @@ router.get('/sessions/:sessionId', async (req, res) => {
         }
       }
     }
-    
-    // Extract messages from sorted JSON blobs
+
     const messages = [];
     for (const blob of blobs) {
       try {
-        // We already parsed JSON blobs earlier
         const parsed = blob.parsed;
-        
         if (parsed) {
-          // Filter out ONLY system messages at the server level
-          // Check both direct role and nested message.role
           const role = parsed?.role || parsed?.message?.role;
           if (role === 'system') {
-            continue; // Skip only system messages
+            continue;
           }
-          messages.push({ 
-            id: blob.id, 
+          messages.push({
+            id: blob.id,
             sequence: blob.sequence_num,
-            rowid: blob.original_rowid, 
-            content: parsed 
+            rowid: blob.original_rowid,
+            content: parsed
           });
         }
       } catch (e) {
-        // Skip blobs that cause errors
         console.log(`Skipping blob ${blob.id}: ${e.message}`);
       }
     }
-    
-    await db.close();
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       session: {
         id: sessionId,
         projectPath: projectPath,
@@ -785,13 +729,14 @@ router.get('/sessions/:sessionId', async (req, res) => {
         cwdId: cwdId
       }
     });
-    
   } catch (error) {
     console.error('Error reading Cursor session:', error);
-    res.status(500).json({ 
-      error: 'Failed to read Cursor session', 
-      details: error.message 
+    res.status(500).json({
+      error: 'Failed to read Cursor session',
+      details: error.message
     });
+  } finally {
+    if (db) await db.close().catch(() => {});
   }
 });
 

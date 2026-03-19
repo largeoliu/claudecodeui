@@ -12,6 +12,7 @@ type SidebarSessionItemProps = {
   project: Project;
   session: SessionWithProvider;
   selectedSession: ProjectSession | null;
+  processingSessions: Set<string>;
   currentTime: Date;
   editingSession: string | null;
   editingSessionName: string;
@@ -34,6 +35,7 @@ export default function SidebarSessionItem({
   project,
   session,
   selectedSession,
+  processingSessions,
   currentTime,
   editingSession,
   editingSessionName,
@@ -48,6 +50,7 @@ export default function SidebarSessionItem({
 }: SidebarSessionItemProps) {
   const sessionView = createSessionViewModel(session, currentTime, t);
   const isSelected = selectedSession?.id === session.id;
+  const isProcessing = processingSessions.has(session.id);
 
   const selectMobileSession = () => {
     onProjectSelect(project);
@@ -64,7 +67,7 @@ export default function SidebarSessionItem({
 
   return (
     <div className="group relative">
-      {sessionView.isActive && (
+      {isProcessing && (
         <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 transform">
           <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
         </div>
@@ -75,8 +78,10 @@ export default function SidebarSessionItem({
           className={cn(
             'p-2 mx-3 my-0.5 rounded-md bg-card border active:scale-[0.98] transition-all duration-150 relative',
             isSelected ? 'bg-primary/5 border-primary/20' : '',
-            !isSelected && sessionView.isActive
-              ? 'border-green-500/30 bg-green-50/5 dark:bg-green-900/5'
+            isProcessing
+              ? 'border-green-500/40 bg-green-50/20 dark:bg-green-900/10'
+              : !isSelected && sessionView.isRecent
+                ? 'border-green-500/20 bg-green-50/5 dark:bg-green-900/5'
               : 'border-border/30',
           )}
           onClick={selectMobileSession}
@@ -98,6 +103,11 @@ export default function SidebarSessionItem({
                 <span className="text-xs text-muted-foreground">
                   {formatTimeAgo(sessionView.sessionTime, currentTime, t)}
                 </span>
+                {isProcessing && (
+                  <Badge className="border-green-200 bg-green-50 px-1.5 py-0 text-[10px] font-medium text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                    {t('sessions.running', { defaultValue: 'Running' })}
+                  </Badge>
+                )}
                 {sessionView.messageCount > 0 && (
                   <Badge variant="secondary" className="ml-auto px-1 py-0 text-xs">
                     {sessionView.messageCount}
@@ -130,6 +140,7 @@ export default function SidebarSessionItem({
           className={cn(
             'w-full justify-start p-2 h-auto font-normal text-left hover:bg-accent/50 transition-colors duration-200',
             isSelected && 'bg-accent text-accent-foreground',
+            !isSelected && isProcessing && 'bg-green-50/40 hover:bg-green-50/60 dark:bg-green-950/10 dark:hover:bg-green-950/20',
           )}
           onClick={() => onSessionSelect(session, project.name)}
         >
@@ -142,6 +153,11 @@ export default function SidebarSessionItem({
                 <span className="text-xs text-muted-foreground">
                   {formatTimeAgo(sessionView.sessionTime, currentTime, t)}
                 </span>
+                {isProcessing && (
+                  <Badge className="border-green-200 bg-green-50 px-1.5 py-0 text-[10px] font-medium text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                    {t('sessions.running', { defaultValue: 'Running' })}
+                  </Badge>
+                )}
                 {sessionView.messageCount > 0 && (
                   <Badge
                     variant="secondary"

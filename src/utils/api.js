@@ -35,6 +35,7 @@ export const authenticatedFetch = (url, options = {}) => {
     const refreshedToken = response.headers.get('X-Refreshed-Token');
     if (refreshedToken) {
       localStorage.setItem('auth-token', refreshedToken);
+      window.dispatchEvent(new CustomEvent('auth-token-refreshed', { detail: { token: refreshedToken } }));
     }
     return response;
   });

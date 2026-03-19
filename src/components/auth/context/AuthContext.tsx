@@ -128,6 +128,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     void checkAuthStatus();
   }, [checkAuthStatus, checkOnboardingStatus]);
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const e = event as CustomEvent<{ token: string }>;
+      const newToken = e.detail?.token;
+      if (newToken) {
+        setToken(newToken);
+      }
+    };
+    window.addEventListener('auth-token-refreshed', handler);
+    return () => window.removeEventListener('auth-token-refreshed', handler);
+  }, []);
+
   const login = useCallback<AuthContextValue['login']>(
     async (username, password) => {
       try {

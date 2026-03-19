@@ -7,6 +7,7 @@ type MainContentTitleProps = {
   activeTab: AppTab;
   selectedProject: Project;
   selectedSession: ProjectSession | null;
+  processingSessions: Set<string>;
   shouldShowTasksTab: boolean;
 };
 
@@ -42,6 +43,7 @@ export default function MainContentTitle({
   activeTab,
   selectedProject,
   selectedSession,
+  processingSessions,
   shouldShowTasksTab,
 }: MainContentTitleProps) {
   const { t } = useTranslation();
@@ -53,6 +55,7 @@ export default function MainContentTitle({
 
   const showSessionIcon = activeTab === 'chat' && Boolean(selectedSession);
   const showChatNewSession = activeTab === 'chat' && !selectedSession;
+  const isProcessing = Boolean(selectedSession?.id && processingSessions.has(selectedSession.id));
 
   return (
     <div className="scrollbar-hide flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
@@ -65,9 +68,17 @@ export default function MainContentTitle({
       <div className="min-w-0 flex-1">
         {activeTab === 'chat' && selectedSession ? (
           <div className="min-w-0">
-            <h2 className="scrollbar-hide overflow-x-auto whitespace-nowrap text-sm font-semibold leading-tight text-foreground">
-              {getSessionTitle(selectedSession)}
-            </h2>
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="scrollbar-hide overflow-x-auto whitespace-nowrap text-sm font-semibold leading-tight text-foreground">
+                {getSessionTitle(selectedSession)}
+              </h2>
+              {isProcessing && (
+                <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+                  {t('mainContent.running', { defaultValue: 'Running' })}
+                </span>
+              )}
+            </div>
             <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>
           </div>
         ) : showChatNewSession ? (

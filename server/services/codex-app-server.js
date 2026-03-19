@@ -639,6 +639,7 @@ class CodexAppServer {
     this.loadedThreads.clear();
     this.pendingUiRequests.clear();
     this.pendingUiRequestsByThread.clear();
+    this.threadWriters.clear();
     this.child = null;
     this.stdoutBuffer = '';
   }
@@ -994,6 +995,19 @@ class CodexAppServer {
     this.threadWriters.get(threadId).add(writer);
   }
 
+  unregisterWriter(threadId, writer) {
+    if (!threadId || !writer) {
+      return;
+    }
+    const writers = this.threadWriters.get(threadId);
+    if (writers) {
+      writers.delete(writer);
+      if (writers.size === 0) {
+        this.threadWriters.delete(threadId);
+      }
+    }
+  }
+
   broadcastToThread(threadId, payload) {
     if (!threadId) {
       return;
@@ -1006,6 +1020,16 @@ class CodexAppServer {
 
     for (const writer of writers) {
       sendWriterMessage(writer, payload);
+    }
+
+    for (const writer of writers) {
+      if (writer.isDead) {
+        writers.delete(writer);
+      }
+    }
+
+    if (writers.size === 0) {
+      this.threadWriters.delete(threadId);
     }
   }
 

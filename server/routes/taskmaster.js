@@ -25,6 +25,69 @@ const __dirname = dirname(__filename);
 
 const router = express.Router();
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+function createTimeoutError(cmd, args, timeoutMs) {
+  const error = new Error(`Command timed out after ${timeoutMs / 1000}s`);
+  error.code = 'ETIMEDOUT';
+  error.command = cmd;
+  error.args = args;
+  return error;
+}
+
+function isTimeoutError(error) {
+  return error?.code === 'ETIMEDOUT';
+}
+
+function spawnWithTimeout(cmd, args, options, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const proc = spawn(cmd, args, options);
+  let settled = false;
+  let timer;
+
+  const finalize = () => {
+    if (settled) return false;
+    settled = true;
+    clearTimeout(timer);
+    return true;
+  };
+
+  const cleanup = () => {
+    clearTimeout(timer);
+    if (!proc.killed) proc.kill();
+  };
+
+  const deferred = {};
+
+  deferred.promise = new Promise((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout?.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr?.on('data', (data) => { stderr += data.toString(); });
+
+    proc.on('close', (code) => {
+      if (!finalize()) return;
+      resolve({ code, stdout, stderr });
+    });
+
+    proc.on('error', (error) => {
+      if (!finalize()) return;
+      reject(error);
+    });
+
+    timer = setTimeout(() => {
+      if (!finalize()) return;
+      console.warn(`[TaskMaster] Process timed out after ${timeoutMs}ms: ${cmd} ${args.join(' ')}`);
+      cleanup();
+      reject(createTimeoutError(cmd, args, timeoutMs));
+    }, timeoutMs);
+  });
+
+  deferred.kill = cleanup;
+  deferred.proc = proc;
+  return deferred;
+}
+
 /**
  * Check if TaskMaster CLI is installed globally
  * @returns {Promise<Object>} Installation status result
@@ -474,45 +537,21 @@ router.get('/next/:projectName', async (req, res) => {
 
         // Try to execute task-master next command
         try {
-            const { spawn } = await import('child_process');
-            
-            const nextTaskCommand = spawn('task-master', ['next'], {
-                cwd: projectPath,
-                stdio: ['pipe', 'pipe', 'pipe']
-            });
+            const { code, stdout, stderr } = await spawnWithTimeout(
+                'task-master', ['next'],
+                { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+                30_000
+            ).promise;
 
-            let stdout = '';
-            let stderr = '';
+            if (code !== 0) {
+                throw new Error(`task-master next failed with code ${code}: ${stderr}`);
+            }
 
-            nextTaskCommand.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-
-            nextTaskCommand.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            await new Promise((resolve, reject) => {
-                nextTaskCommand.on('close', (code) => {
-                    if (code === 0) {
-                        resolve();
-                    } else {
-                        reject(new Error(`task-master next failed with code ${code}: ${stderr}`));
-                    }
-                });
-
-                nextTaskCommand.on('error', (error) => {
-                    reject(error);
-                });
-            });
-
-            // Parse the output - task-master next usually returns JSON
             let nextTaskData = null;
             if (stdout.trim()) {
                 try {
                     nextTaskData = JSON.parse(stdout);
                 } catch (parseError) {
-                    // If not JSON, treat as plain text
                     nextTaskData = { message: stdout.trim() };
                 }
             }
@@ -529,11 +568,19 @@ router.get('/next/:projectName', async (req, res) => {
             
             // Fallback to loading tasks and finding next one locally
             // Use localhost to bypass proxy for internal server-to-server calls
-            const tasksResponse = await fetch(`http://localhost:${process.env.SERVER_PORT || process.env.PORT || '3001'}/api/taskmaster/tasks/${encodeURIComponent(projectName)}`, {
-                headers: {
-                    'Authorization': req.headers.authorization
-                }
-            });
+            const ac = new AbortController();
+            const timeout = setTimeout(() => ac.abort(), 10_000);
+            let tasksResponse;
+            try {
+                tasksResponse = await fetch(`http://localhost:${process.env.SERVER_PORT || process.env.PORT || '3001'}/api/taskmaster/tasks/${encodeURIComponent(projectName)}`, {
+                    headers: {
+                        'Authorization': req.headers.authorization
+                    },
+                    signal: ac.signal,
+                });
+            } finally {
+                clearTimeout(timeout);
+            }
 
             if (tasksResponse.ok) {
                 const tasksData = await tasksResponse.json();
@@ -1003,44 +1050,51 @@ router.post('/init/:projectName', async (req, res) => {
 
         let stdout = '';
         let stderr = '';
+        let settled = false;
 
-        initProcess.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
+        const cleanup = () => {
+            if (settled) return;
+            settled = true;
+            initProcess.stdout?.removeAllListeners('data');
+            initProcess.stderr?.removeAllListeners('data');
+            initProcess.removeAllListeners('close');
+            clearTimeout(timer);
+            if (!initProcess.killed) initProcess.kill();
+        };
 
-        initProcess.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
+        const timer = setTimeout(() => {
+            if (!settled) {
+                console.warn('[TaskMaster] init timed out');
+                res.status(504).json({ error: 'Command timed out' });
+                cleanup();
+            }
+        }, 60_000);
+
+        initProcess.stdout.on('data', (data) => { stdout += data.toString(); });
+        initProcess.stderr.on('data', (data) => { stderr += data.toString(); });
 
         initProcess.on('close', (code) => {
+            if (settled) return;
+            cleanup();
             if (code === 0) {
-                // Broadcast TaskMaster project update via WebSocket
                 if (req.app.locals.wss) {
-                    broadcastTaskMasterProjectUpdate(
-                        req.app.locals.wss, 
-                        projectName, 
-                        { hasTaskmaster: true, status: 'initialized' }
-                    );
+                    broadcastTaskMasterProjectUpdate(req.app.locals.wss, projectName, { hasTaskmaster: true, status: 'initialized' });
                 }
-
-                res.json({
-                    projectName,
-                    projectPath,
-                    message: 'TaskMaster initialized successfully',
-                    output: stdout,
-                    timestamp: new Date().toISOString()
-                });
+                res.json({ projectName, projectPath, message: 'TaskMaster initialized successfully', output: stdout, timestamp: new Date().toISOString() });
             } else {
                 console.error('TaskMaster init failed:', stderr);
-                res.status(500).json({
-                    error: 'Failed to initialize TaskMaster',
-                    message: stderr || stdout,
-                    code
-                });
+                res.status(500).json({ error: 'Failed to initialize TaskMaster', message: stderr || stdout, code });
             }
         });
 
-        // Send 'yes' responses to automated prompts
+        initProcess.on('error', (error) => {
+            if (!settled) {
+                console.error('TaskMaster init error:', error.message);
+                res.status(500).json({ error: 'Failed to initialize TaskMaster', message: error.message });
+                cleanup();
+            }
+        });
+
         initProcess.stdin.write('yes\n');
         initProcess.stdin.end();
 
@@ -1099,54 +1153,25 @@ router.post('/add-task/:projectName', async (req, res) => {
         }
 
         // Run task-master add-task command
-        const addTaskProcess = spawn('npx', args, {
-            cwd: projectPath,
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
+        const { code, stdout, stderr } = await spawnWithTimeout(
+            'npx', args,
+            { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+            30_000
+        ).promise;
 
-        let stdout = '';
-        let stderr = '';
+        console.log('Add task process completed with code:', code);
+        console.log('Stdout:', stdout);
+        console.log('Stderr:', stderr);
 
-        addTaskProcess.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
-
-        addTaskProcess.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-
-        addTaskProcess.on('close', (code) => {
-            console.log('Add task process completed with code:', code);
-            console.log('Stdout:', stdout);
-            console.log('Stderr:', stderr);
-            
-            if (code === 0) {
-                // Broadcast task update via WebSocket
-                if (req.app.locals.wss) {
-                    broadcastTaskMasterTasksUpdate(
-                        req.app.locals.wss, 
-                        projectName
-                    );
-                }
-
-                res.json({
-                    projectName,
-                    projectPath,
-                    message: 'Task added successfully',
-                    output: stdout,
-                    timestamp: new Date().toISOString()
-                });
-            } else {
-                console.error('Add task failed:', stderr);
-                res.status(500).json({
-                    error: 'Failed to add task',
-                    message: stderr || stdout,
-                    code
-                });
+        if (code === 0) {
+            if (req.app.locals.wss) {
+                broadcastTaskMasterTasksUpdate(req.app.locals.wss, projectName);
             }
-        });
-
-        addTaskProcess.stdin.end();
+            res.json({ projectName, projectPath, message: 'Task added successfully', output: stdout, timestamp: new Date().toISOString() });
+        } else {
+            console.error('Add task failed:', stderr);
+            res.status(500).json({ error: 'Failed to add task', message: stderr || stdout, code });
+        }
 
     } catch (error) {
         console.error('Add task error:', error);
@@ -1179,48 +1204,27 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
 
         // If only updating status, use set-status command
         if (status && Object.keys(req.body).length === 1) {
-            const setStatusProcess = spawn('npx', ['task-master-ai', 'set-status', `--id=${taskId}`, `--status=${status}`], {
-                cwd: projectPath,
-                stdio: ['pipe', 'pipe', 'pipe']
-            });
+            try {
+                const { code, stdout, stderr } = await spawnWithTimeout(
+                    'npx', ['task-master-ai', 'set-status', `--id=${taskId}`, `--status=${status}`],
+                    { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+                    30_000
+                ).promise;
 
-            let stdout = '';
-            let stderr = '';
-
-            setStatusProcess.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-
-            setStatusProcess.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            setStatusProcess.on('close', (code) => {
                 if (code === 0) {
-                    // Broadcast task update via WebSocket
                     if (req.app.locals.wss) {
                         broadcastTaskMasterTasksUpdate(req.app.locals.wss, projectName);
                     }
-
-                    res.json({
-                        projectName,
-                        projectPath,
-                        taskId,
-                        message: 'Task status updated successfully',
-                        output: stdout,
-                        timestamp: new Date().toISOString()
-                    });
+                    res.json({ projectName, projectPath, taskId, message: 'Task status updated successfully', output: stdout, timestamp: new Date().toISOString() });
                 } else {
                     console.error('Set task status failed:', stderr);
-                    res.status(500).json({
-                        error: 'Failed to update task status',
-                        message: stderr || stdout,
-                        code
-                    });
+                    res.status(500).json({ error: 'Failed to update task status', message: stderr || stdout, code });
                 }
-            });
-
-            setStatusProcess.stdin.end();
+            } catch (err) {
+                console.error('Set task status error:', err.message);
+                const statusCode = isTimeoutError(err) ? 504 : 500;
+                res.status(statusCode).json({ error: isTimeoutError(err) ? 'Command timed out' : 'Failed to update task status', message: err.message });
+            }
         } else {
             // For other updates, use update-task command with a prompt describing the changes
             const updates = [];
@@ -1228,51 +1232,30 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
             if (description) updates.push(`description: "${description}"`);
             if (priority) updates.push(`priority: "${priority}"`);
             if (details) updates.push(`details: "${details}"`);
-            
+
             const prompt = `Update task with the following changes: ${updates.join(', ')}`;
 
-            const updateProcess = spawn('npx', ['task-master-ai', 'update-task', `--id=${taskId}`, `--prompt=${prompt}`], {
-                cwd: projectPath,
-                stdio: ['pipe', 'pipe', 'pipe']
-            });
+            try {
+                const { code, stdout, stderr } = await spawnWithTimeout(
+                    'npx', ['task-master-ai', 'update-task', `--id=${taskId}`, `--prompt=${prompt}`],
+                    { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+                    30_000
+                ).promise;
 
-            let stdout = '';
-            let stderr = '';
-
-            updateProcess.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-
-            updateProcess.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            updateProcess.on('close', (code) => {
                 if (code === 0) {
-                    // Broadcast task update via WebSocket
                     if (req.app.locals.wss) {
                         broadcastTaskMasterTasksUpdate(req.app.locals.wss, projectName);
                     }
-
-                    res.json({
-                        projectName,
-                        projectPath,
-                        taskId,
-                        message: 'Task updated successfully',
-                        output: stdout,
-                        timestamp: new Date().toISOString()
-                    });
+                    res.json({ projectName, projectPath, taskId, message: 'Task updated successfully', output: stdout, timestamp: new Date().toISOString() });
                 } else {
                     console.error('Update task failed:', stderr);
-                    res.status(500).json({
-                        error: 'Failed to update task',
-                        message: stderr || stdout,
-                        code
-                    });
+                    res.status(500).json({ error: 'Failed to update task', message: stderr || stdout, code });
                 }
-            });
-
-            updateProcess.stdin.end();
+            } catch (err) {
+                console.error('Update task error:', err.message);
+                const statusCode = isTimeoutError(err) ? 504 : 500;
+                res.status(statusCode).json({ error: isTimeoutError(err) ? 'Command timed out' : 'Failed to update task', message: err.message });
+            }
         }
 
     } catch (error) {
@@ -1316,72 +1299,42 @@ router.post('/parse-prd/:projectName', async (req, res) => {
             });
         }
 
-        // Build the command args
         const args = ['task-master-ai', 'parse-prd', prdPath];
-        
+
         if (numTasks) {
             args.push('--num-tasks', numTasks.toString());
         }
-        
+
         if (append) {
             args.push('--append');
         }
-        
-        args.push('--research'); // Use research for better PRD parsing
 
-        // Run task-master parse-prd command
-        const parsePRDProcess = spawn('npx', args, {
-            cwd: projectPath,
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
+        args.push('--research');
 
-        let stdout = '';
-        let stderr = '';
+        try {
+            const { code, stdout, stderr } = await spawnWithTimeout(
+                'npx', args,
+                { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+                60_000
+            ).promise;
 
-        parsePRDProcess.stdout.on('data', (data) => {
-            stdout += data.toString();
-        });
-
-        parsePRDProcess.stderr.on('data', (data) => {
-            stderr += data.toString();
-        });
-
-        parsePRDProcess.on('close', (code) => {
             if (code === 0) {
-                // Broadcast task update via WebSocket
                 if (req.app.locals.wss) {
-                    broadcastTaskMasterTasksUpdate(
-                        req.app.locals.wss, 
-                        projectName
-                    );
+                    broadcastTaskMasterTasksUpdate(req.app.locals.wss, projectName);
                 }
-
-                res.json({
-                    projectName,
-                    projectPath,
-                    prdFile: fileName,
-                    message: 'PRD parsed and tasks generated successfully',
-                    output: stdout,
-                    timestamp: new Date().toISOString()
-                });
+                res.json({ projectName, projectPath, prdFile: fileName, message: 'PRD parsed and tasks generated successfully', output: stdout, timestamp: new Date().toISOString() });
             } else {
                 console.error('Parse PRD failed:', stderr);
-                res.status(500).json({
-                    error: 'Failed to parse PRD',
-                    message: stderr || stdout,
-                    code
-                });
+                res.status(500).json({ error: 'Failed to parse PRD', message: stderr || stdout, code });
             }
-        });
-
-        parsePRDProcess.stdin.end();
-
+        } catch (err) {
+            console.error('Parse PRD error:', err.message);
+            const statusCode = isTimeoutError(err) ? 504 : 500;
+            res.status(statusCode).json({ error: isTimeoutError(err) ? 'Command timed out' : 'Failed to parse PRD', message: err.message });
+        }
     } catch (error) {
         console.error('Parse PRD error:', error);
-        res.status(500).json({
-            error: 'Failed to parse PRD',
-            message: error.message
-        });
+        res.status(500).json({ error: 'Failed to parse PRD', message: error.message });
     }
 });
 

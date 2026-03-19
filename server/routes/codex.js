@@ -9,6 +9,8 @@ import { applyCustomSessionNames, sessionNamesDb } from '../database/db.js';
 
 const router = express.Router();
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 function createCliResponder(res) {
   let responded = false;
   return (status, payload) => {
@@ -18,6 +20,55 @@ function createCliResponder(res) {
     responded = true;
     res.status(status).json(payload);
   };
+}
+
+function runCodexProcess(args, res, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const respond = createCliResponder(res);
+  const proc = spawn(args[0], args.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] });
+
+  let stdout = '';
+  let stderr = '';
+  let settled = false;
+
+  const cleanup = () => {
+    if (settled) return;
+    settled = true;
+    proc.stdout?.removeAllListeners('data');
+    proc.stderr?.removeAllListeners('data');
+    proc.removeAllListeners('close');
+    proc.removeAllListeners('error');
+    clearTimeout(timer);
+    if (!proc.killed) proc.kill();
+  };
+
+  const timer = setTimeout(() => {
+    if (!settled) {
+      console.warn(`[Codex] Process timed out after ${timeoutMs}ms: ${args.join(' ')}`);
+      respond(504, { error: 'Command timed out', details: `Process exceeded ${timeoutMs / 1000}s limit` });
+      cleanup();
+    }
+  }, timeoutMs);
+
+  proc.stdout?.on('data', (data) => { stdout += data.toString(); });
+  proc.stderr?.on('data', (data) => { stderr += data.toString(); });
+
+  proc.on('close', (code) => {
+    if (settled) return;
+    cleanup();
+    if (code === 0) {
+      respond(200, { success: true, output: stdout });
+    } else {
+      respond(500, { error: 'CLI command failed', details: stderr || `Exited with code ${code}` });
+    }
+  });
+
+  proc.on('error', (error) => {
+    if (settled) return;
+    cleanup();
+    respond(500, { error: 'Failed to run CLI', details: error.message });
+  });
+
+  return cleanup;
 }
 
 router.get('/config', async (req, res) => {
@@ -119,11 +170,33 @@ router.get('/mcp/cli/list', async (req, res) => {
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      proc.stdout?.removeAllListeners('data');
+      proc.stderr?.removeAllListeners('data');
+      proc.removeAllListeners('close');
+      proc.removeAllListeners('error');
+      clearTimeout(timer);
+      if (!proc.killed) proc.kill();
+    };
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        console.warn('[Codex] Process timed out: codex mcp list');
+        respond(504, { error: 'Command timed out' });
+        cleanup();
+      }
+    }, DEFAULT_TIMEOUT_MS);
 
     proc.stdout?.on('data', (data) => { stdout += data.toString(); });
     proc.stderr?.on('data', (data) => { stderr += data.toString(); });
 
     proc.on('close', (code) => {
+      if (settled) return;
+      cleanup();
       if (code === 0) {
         respond(200, { success: true, output: stdout, servers: parseCodexListOutput(stdout) });
       } else {
@@ -132,6 +205,8 @@ router.get('/mcp/cli/list', async (req, res) => {
     });
 
     proc.on('error', (error) => {
+      if (settled) return;
+      cleanup();
       const isMissing = error?.code === 'ENOENT';
       respond(isMissing ? 503 : 500, {
         error: isMissing ? 'Codex CLI not installed' : 'Failed to run Codex CLI',
@@ -152,15 +227,11 @@ router.post('/mcp/cli/add', async (req, res) => {
       return res.status(400).json({ error: 'name and command are required' });
     }
 
-    // Build: codex mcp add <name> [-e KEY=VAL]... -- <command> [args...]
     let cliArgs = ['mcp', 'add', name];
-
     Object.entries(env).forEach(([key, value]) => {
       cliArgs.push('-e', `${key}=${value}`);
     });
-
     cliArgs.push('--', command);
-
     if (args && args.length > 0) {
       cliArgs.push(...args);
     }
@@ -170,11 +241,33 @@ router.post('/mcp/cli/add', async (req, res) => {
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      proc.stdout?.removeAllListeners('data');
+      proc.stderr?.removeAllListeners('data');
+      proc.removeAllListeners('close');
+      proc.removeAllListeners('error');
+      clearTimeout(timer);
+      if (!proc.killed) proc.kill();
+    };
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        console.warn('[Codex] Process timed out: codex mcp add');
+        respond(504, { error: 'Command timed out' });
+        cleanup();
+      }
+    }, DEFAULT_TIMEOUT_MS);
 
     proc.stdout?.on('data', (data) => { stdout += data.toString(); });
     proc.stderr?.on('data', (data) => { stderr += data.toString(); });
 
     proc.on('close', (code) => {
+      if (settled) return;
+      cleanup();
       if (code === 0) {
         respond(200, { success: true, output: stdout, message: `MCP server "${name}" added successfully` });
       } else {
@@ -183,6 +276,8 @@ router.post('/mcp/cli/add', async (req, res) => {
     });
 
     proc.on('error', (error) => {
+      if (settled) return;
+      cleanup();
       const isMissing = error?.code === 'ENOENT';
       respond(isMissing ? 503 : 500, {
         error: isMissing ? 'Codex CLI not installed' : 'Failed to run Codex CLI',
@@ -204,11 +299,33 @@ router.delete('/mcp/cli/remove/:name', async (req, res) => {
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      proc.stdout?.removeAllListeners('data');
+      proc.stderr?.removeAllListeners('data');
+      proc.removeAllListeners('close');
+      proc.removeAllListeners('error');
+      clearTimeout(timer);
+      if (!proc.killed) proc.kill();
+    };
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        console.warn('[Codex] Process timed out: codex mcp remove');
+        respond(504, { error: 'Command timed out' });
+        cleanup();
+      }
+    }, DEFAULT_TIMEOUT_MS);
 
     proc.stdout?.on('data', (data) => { stdout += data.toString(); });
     proc.stderr?.on('data', (data) => { stderr += data.toString(); });
 
     proc.on('close', (code) => {
+      if (settled) return;
+      cleanup();
       if (code === 0) {
         respond(200, { success: true, output: stdout, message: `MCP server "${name}" removed successfully` });
       } else {
@@ -217,6 +334,8 @@ router.delete('/mcp/cli/remove/:name', async (req, res) => {
     });
 
     proc.on('error', (error) => {
+      if (settled) return;
+      cleanup();
       const isMissing = error?.code === 'ENOENT';
       respond(isMissing ? 503 : 500, {
         error: isMissing ? 'Codex CLI not installed' : 'Failed to run Codex CLI',
@@ -238,11 +357,33 @@ router.get('/mcp/cli/get/:name', async (req, res) => {
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    const cleanup = () => {
+      if (settled) return;
+      settled = true;
+      proc.stdout?.removeAllListeners('data');
+      proc.stderr?.removeAllListeners('data');
+      proc.removeAllListeners('close');
+      proc.removeAllListeners('error');
+      clearTimeout(timer);
+      if (!proc.killed) proc.kill();
+    };
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        console.warn('[Codex] Process timed out: codex mcp get');
+        respond(504, { error: 'Command timed out' });
+        cleanup();
+      }
+    }, DEFAULT_TIMEOUT_MS);
 
     proc.stdout?.on('data', (data) => { stdout += data.toString(); });
     proc.stderr?.on('data', (data) => { stderr += data.toString(); });
 
     proc.on('close', (code) => {
+      if (settled) return;
+      cleanup();
       if (code === 0) {
         respond(200, { success: true, output: stdout, server: parseCodexGetOutput(stdout) });
       } else {
@@ -251,6 +392,8 @@ router.get('/mcp/cli/get/:name', async (req, res) => {
     });
 
     proc.on('error', (error) => {
+      if (settled) return;
+      cleanup();
       const isMissing = error?.code === 'ENOENT';
       respond(isMissing ? 503 : 500, {
         error: isMissing ? 'Codex CLI not installed' : 'Failed to run Codex CLI',

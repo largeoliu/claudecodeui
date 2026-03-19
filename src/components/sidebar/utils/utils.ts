@@ -86,12 +86,14 @@ export const createSessionViewModel = (
 ): SessionViewModel => {
   const sessionDate = getSessionDate(session);
   const diffInMinutes = Math.floor((currentTime.getTime() - sessionDate.getTime()) / (1000 * 60));
+  const isRecent = diffInMinutes < 10;
 
   return {
     isCursorSession: session.__provider === 'cursor',
     isCodexSession: session.__provider === 'codex',
     isGeminiSession: session.__provider === 'gemini',
-    isActive: diffInMinutes < 10,
+    isActive: isRecent,
+    isRecent,
     sessionName: getSessionName(session, t),
     sessionTime: getSessionTime(session),
     messageCount: Number(session.messageCount || 0),

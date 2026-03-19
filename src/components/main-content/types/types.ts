@@ -60,6 +60,7 @@ export type MainContentHeaderProps = {
   setActiveTab: Dispatch<SetStateAction<AppTab>>;
   selectedProject: Project;
   selectedSession: ProjectSession | null;
+  processingSessions: Set<string>;
   shouldShowTasksTab: boolean;
   isMobile: boolean;
   onMenuClick: () => void;

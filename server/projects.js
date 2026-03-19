@@ -1299,77 +1299,70 @@ async function getCursorSessions(projectPath) {
       const sessionPath = path.join(cursorChatsPath, sessionId);
       const storeDbPath = path.join(sessionPath, 'store.db');
 
+      let db;
       try {
-        // Check if store.db exists
         await fs.access(storeDbPath);
 
-        // Capture store.db mtime as a reliable fallback timestamp
         let dbStatMtimeMs = null;
         try {
           const stat = await fs.stat(storeDbPath);
           dbStatMtimeMs = stat.mtimeMs;
-        } catch (_) { }
+        } catch (_) {}
 
-        // Open SQLite database
-        const db = await open({
+        db = await open({
           filename: storeDbPath,
           driver: sqlite3.Database,
           mode: sqlite3.OPEN_READONLY
         });
 
-        // Get metadata from meta table
-        const metaRows = await db.all(`
-          SELECT key, value FROM meta
-        `);
+        try {
+          const metaRows = await db.all(`
+            SELECT key, value FROM meta
+          `);
 
-        // Parse metadata
-        let metadata = {};
-        for (const row of metaRows) {
-          if (row.value) {
-            try {
-              // Try to decode as hex-encoded JSON
-              const hexMatch = row.value.toString().match(/^[0-9a-fA-F]+$/);
-              if (hexMatch) {
-                const jsonStr = Buffer.from(row.value, 'hex').toString('utf8');
-                metadata[row.key] = JSON.parse(jsonStr);
-              } else {
+          let metadata = {};
+          for (const row of metaRows) {
+            if (row.value) {
+              try {
+                const hexMatch = row.value.toString().match(/^[0-9a-fA-F]+$/);
+                if (hexMatch) {
+                  const jsonStr = Buffer.from(row.value, 'hex').toString('utf8');
+                  metadata[row.key] = JSON.parse(jsonStr);
+                } else {
+                  metadata[row.key] = row.value.toString();
+                }
+              } catch (e) {
                 metadata[row.key] = row.value.toString();
               }
-            } catch (e) {
-              metadata[row.key] = row.value.toString();
             }
           }
+
+          const messageCountResult = await db.get(`
+            SELECT COUNT(*) as count FROM blobs
+          `);
+
+          const sessionName = metadata.title || metadata.sessionTitle || 'Untitled Session';
+
+          let createdAt = null;
+          if (metadata.createdAt) {
+            createdAt = new Date(metadata.createdAt).toISOString();
+          } else if (dbStatMtimeMs) {
+            createdAt = new Date(dbStatMtimeMs).toISOString();
+          } else {
+            createdAt = new Date().toISOString();
+          }
+
+          sessions.push({
+            id: sessionId,
+            name: sessionName,
+            createdAt: createdAt,
+            lastActivity: createdAt,
+            messageCount: messageCountResult.count || 0,
+            projectPath: projectPath
+          });
+        } finally {
+          if (db) await db.close().catch(() => {});
         }
-
-        // Get message count
-        const messageCountResult = await db.get(`
-          SELECT COUNT(*) as count FROM blobs
-        `);
-
-        await db.close();
-
-        // Extract session info
-        const sessionName = metadata.title || metadata.sessionTitle || 'Untitled Session';
-
-        // Determine timestamp - prefer createdAt from metadata, fall back to db file mtime
-        let createdAt = null;
-        if (metadata.createdAt) {
-          createdAt = new Date(metadata.createdAt).toISOString();
-        } else if (dbStatMtimeMs) {
-          createdAt = new Date(dbStatMtimeMs).toISOString();
-        } else {
-          createdAt = new Date().toISOString();
-        }
-
-        sessions.push({
-          id: sessionId,
-          name: sessionName,
-          createdAt: createdAt,
-          lastActivity: createdAt, // For compatibility with Claude sessions
-          messageCount: messageCountResult.count || 0,
-          projectPath: projectPath
-        });
-
       } catch (error) {
         console.warn(`Could not read Cursor session ${sessionId}:`, error.message);
       }

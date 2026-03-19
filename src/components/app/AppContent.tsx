@@ -24,6 +24,7 @@ export default function AppContent() {
     markSessionAsProcessing,
     markSessionAsNotProcessing,
     replaceTemporarySession,
+    syncSessionsFromServer,
   } = useSessionProtection();
 
   const {
@@ -105,29 +106,50 @@ export default function AppContent() {
     };
   }, [navigate, refreshProjectsSilently, setActiveTab, setSidebarOpen]);
 
-  // Permission recovery: query pending permissions on WebSocket reconnect or session change
   useEffect(() => {
-    const isReconnect = isConnected && !wasConnectedRef.current;
-
-    if (isReconnect) {
-      wasConnectedRef.current = true;
-    } else if (!isConnected) {
+    if (!isConnected) {
       wasConnectedRef.current = false;
+      return;
     }
 
-    if (isConnected && selectedSession?.id) {
-      sendMessage({
-        type: 'get-pending-permissions',
-        sessionId: selectedSession.id
-      });
+    wasConnectedRef.current = true;
+    sendMessage({ type: 'get-active-sessions' });
+  }, [isConnected, sendMessage]);
+
+  useEffect(() => {
+    if (!isConnected || !selectedSession?.id) {
+      return;
     }
+
+    sendMessage({
+      type: 'get-pending-permissions',
+      sessionId: selectedSession.id
+    });
   }, [isConnected, selectedSession?.id, sendMessage]);
+
+  // Handle active-sessions response from server
+  useEffect(() => {
+    if (!latestMessage) return;
+    if (latestMessage.type !== 'active-sessions') return;
+
+    const activeSessionsData = latestMessage.sessions;
+    if (!activeSessionsData) return;
+
+    const allActiveIds = [
+      ...(Array.isArray(activeSessionsData.claude) ? activeSessionsData.claude : []),
+      ...(Array.isArray(activeSessionsData.cursor) ? activeSessionsData.cursor : []),
+      ...(Array.isArray(activeSessionsData.codex) ? activeSessionsData.codex : []),
+      ...(Array.isArray(activeSessionsData.gemini) ? activeSessionsData.gemini : []),
+    ];
+
+    syncSessionsFromServer(allActiveIds);
+  }, [latestMessage, syncSessionsFromServer]);
 
   return (
     <div className="fixed inset-0 flex bg-background">
       {!isMobile ? (
         <div className="h-full flex-shrink-0 border-r border-border/50">
-          <Sidebar {...sidebarSharedProps} />
+          <Sidebar {...sidebarSharedProps} processingSessions={processingSessions} />
         </div>
       ) : (
         <div
@@ -153,7 +175,7 @@ export default function AppContent() {
             onClick={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}
           >
-            <Sidebar {...sidebarSharedProps} />
+            <Sidebar {...sidebarSharedProps} processingSessions={processingSessions} />
           </div>
         </div>
       )}

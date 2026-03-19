@@ -7,7 +7,11 @@ import sqlite3 from 'sqlite3';
 const REQUEST_TIMEOUT_MS = 30000;
 const CODEX_APP_SERVER_ARGS = ['app-server', '--listen', 'stdio://'];
 const INTERACTIVE_SOURCE_KINDS = ['cli', 'vscode', 'appServer'];
-const SUPPORTED_REASONING_EFFORTS = new Set(['low', 'medium', 'high']);
+const SUPPORTED_REASONING_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+const SUPPORTED_APPROVAL_POLICIES = new Set(['untrusted', 'on-request', 'never']);
+const SUPPORTED_COLLABORATION_MODES = new Set(['default', 'plan']);
+const DEFAULT_CODEX_APPROVAL_POLICY = 'on-request';
+const DEFAULT_CODEX_SANDBOX = 'workspace-write';
 
 function createDeferred() {
   let resolve;
@@ -55,22 +59,17 @@ function isInteractiveThread(thread) {
   return INTERACTIVE_SOURCE_KINDS.includes(source);
 }
 
-function mapPermissionModeToCodexOptions(permissionMode = 'plan') {
-  switch (permissionMode) {
-    case 'acceptEdits':
-    case 'bypassPermissions':
-      return {
-        approvalPolicy: 'never',
-        sandbox: 'workspace-write',
-      };
-    case 'plan':
-    case 'default':
-    default:
-      return {
-        approvalPolicy: 'untrusted',
-        sandbox: 'workspace-write',
-      };
-  }
+function normalizeCodexApprovalPolicy(approvalPolicy = DEFAULT_CODEX_APPROVAL_POLICY) {
+  return SUPPORTED_APPROVAL_POLICIES.has(approvalPolicy)
+    ? approvalPolicy
+    : DEFAULT_CODEX_APPROVAL_POLICY;
+}
+
+function getCodexThreadOptions(options = {}) {
+  return {
+    approvalPolicy: normalizeCodexApprovalPolicy(options.approvalPolicy),
+    sandbox: DEFAULT_CODEX_SANDBOX,
+  };
 }
 
 function normalizeInputItems(input) {
@@ -111,6 +110,27 @@ function normalizeInputItems(input) {
 
 function normalizeReasoningEffort(value) {
   return typeof value === 'string' && SUPPORTED_REASONING_EFFORTS.has(value) ? value : null;
+}
+
+function normalizeCodexCollaborationMode(mode) {
+  if (mode === 'edit') {
+    return 'default';
+  }
+
+  return typeof mode === 'string' && SUPPORTED_COLLABORATION_MODES.has(mode)
+    ? mode
+    : null;
+}
+
+function normalizeTrackedModel(model) {
+  return typeof model === 'string' && model.trim() ? model : null;
+}
+
+function normalizeTrackedTurnSettings(settings = {}) {
+  return {
+    model: normalizeTrackedModel(settings.model),
+    reasoningEffort: normalizeReasoningEffort(settings.reasoningEffort),
+  };
 }
 
 function shouldRetryWithoutReasoning(error) {
@@ -565,6 +585,8 @@ class CodexAppServer {
     this.pendingUiRequests = new Map();
     this.pendingUiRequestsByThread = new Map();
     this.threadTokenUsage = new Map();
+    this.threadCollaborationModes = new Map();
+    this.threadTurnSettings = new Map();
   }
 
   async ensureStarted() {
@@ -650,6 +672,8 @@ class CodexAppServer {
     this.pendingUiRequests.clear();
     this.pendingUiRequestsByThread.clear();
     this.threadWriters.clear();
+    this.threadCollaborationModes.clear();
+    this.threadTurnSettings.clear();
     this.child = null;
     this.stdoutBuffer = '';
   }
@@ -804,6 +828,20 @@ class CodexAppServer {
         this.loadedThreads.add(params.thread.id);
       }
       return;
+    }
+
+    if (method === 'thread/status/changed' && params.threadId && params.status?.type === 'notLoaded') {
+      this.loadedThreads.delete(params.threadId);
+      this.threadCollaborationModes.delete(params.threadId);
+      this.threadTurnSettings.delete(params.threadId);
+      this.threadTokenUsage.delete(params.threadId);
+    }
+
+    if (method === 'thread/closed' && params.threadId) {
+      this.loadedThreads.delete(params.threadId);
+      this.threadCollaborationModes.delete(params.threadId);
+      this.threadTurnSettings.delete(params.threadId);
+      this.threadTokenUsage.delete(params.threadId);
     }
 
     if (method === 'thread/tokenUsage/updated') {
@@ -1055,6 +1093,10 @@ class CodexAppServer {
 
     if (response?.thread?.id) {
       this.loadedThreads.add(response.thread.id);
+      this.setTrackedTurnSettings(response.thread.id, {
+        model: response.model,
+        reasoningEffort: response.reasoningEffort,
+      });
     }
 
     return response;
@@ -1072,6 +1114,10 @@ class CodexAppServer {
 
     if (response?.thread?.id) {
       this.loadedThreads.add(response.thread.id);
+      this.setTrackedTurnSettings(response.thread.id, {
+        model: response.model,
+        reasoningEffort: response.reasoningEffort,
+      });
     }
 
     return response;
@@ -1083,6 +1129,84 @@ class CodexAppServer {
     }
 
     await this.resumeThread(threadId, options);
+  }
+
+  getTrackedCollaborationMode(threadId) {
+    if (!threadId) {
+      return null;
+    }
+
+    return this.threadCollaborationModes.get(threadId) || null;
+  }
+
+  setTrackedCollaborationMode(threadId, mode) {
+    if (!threadId) {
+      return;
+    }
+
+    const normalizedMode = normalizeCodexCollaborationMode(mode);
+    if (!normalizedMode) {
+      this.threadCollaborationModes.delete(threadId);
+      return;
+    }
+
+    this.threadCollaborationModes.set(threadId, normalizedMode);
+  }
+
+  getTrackedTurnSettings(threadId) {
+    if (!threadId) {
+      return { model: null, reasoningEffort: null };
+    }
+
+    return this.threadTurnSettings.get(threadId) || { model: null, reasoningEffort: null };
+  }
+
+  setTrackedTurnSettings(threadId, settings = {}) {
+    if (!threadId) {
+      return;
+    }
+
+    this.threadTurnSettings.set(threadId, normalizeTrackedTurnSettings(settings));
+  }
+
+  updateTrackedTurnSettings(threadId, nextSettings = {}) {
+    if (!threadId) {
+      return;
+    }
+
+    const currentSettings = this.getTrackedTurnSettings(threadId);
+    this.threadTurnSettings.set(threadId, normalizeTrackedTurnSettings({
+      model: Object.prototype.hasOwnProperty.call(nextSettings, 'model')
+        ? nextSettings.model
+        : currentSettings.model,
+      reasoningEffort: Object.prototype.hasOwnProperty.call(nextSettings, 'reasoningEffort')
+        ? nextSettings.reasoningEffort
+        : currentSettings.reasoningEffort,
+    }));
+  }
+
+  shouldSyncTurnSettings(threadId, options = {}) {
+    const trackedSettings = this.getTrackedTurnSettings(threadId);
+    const nextSettings = normalizeTrackedTurnSettings(options);
+
+    return {
+      model: nextSettings.model !== trackedSettings.model,
+      reasoningEffort: nextSettings.reasoningEffort !== trackedSettings.reasoningEffort,
+    };
+  }
+
+  shouldSyncCollaborationMode(threadId, mode, options = {}) {
+    const normalizedMode = normalizeCodexCollaborationMode(mode);
+    if (!threadId || !normalizedMode) {
+      return false;
+    }
+
+    const trackedMode = this.getTrackedCollaborationMode(threadId);
+    if (trackedMode) {
+      return trackedMode !== normalizedMode;
+    }
+
+    return options.assumeDefaultIfUnknown ? normalizedMode !== 'default' : true;
   }
 
   async startTurn(threadId, input, options = {}, writer = null) {
@@ -1097,12 +1221,19 @@ class CodexAppServer {
       input: normalizeInputItems(input),
       cwd: options.cwd || null,
       approvalPolicy: options.approvalPolicy || null,
-      model: options.model || null,
     };
     const normalizedReasoningEffort = normalizeReasoningEffort(options.reasoningEffort);
 
+    if (options.collaborationMode) {
+      requestParams.collaborationMode = options.collaborationMode;
+    }
+
+    if (options.model) {
+      requestParams.model = options.model || null;
+    }
+
     if (normalizedReasoningEffort) {
-      requestParams.reasoningEffort = normalizedReasoningEffort;
+      requestParams.effort = normalizedReasoningEffort;
     }
 
     let result;
@@ -1114,7 +1245,16 @@ class CodexAppServer {
       }
 
       console.warn('[CodexAppServer] Retrying turn without reasoning effort:', error.message);
-      delete requestParams.reasoningEffort;
+      delete requestParams.effort;
+      if (requestParams.collaborationMode?.settings) {
+        requestParams.collaborationMode = {
+          ...requestParams.collaborationMode,
+          settings: {
+            ...requestParams.collaborationMode.settings,
+            reasoning_effort: null,
+          },
+        };
+      }
       result = await this.sendRequest('turn/start', requestParams);
     }
 
@@ -1356,6 +1496,8 @@ class CodexAppServer {
     this.threadWriters.delete(threadId);
     this.loadedThreads.delete(threadId);
     this.threadTokenUsage.delete(threadId);
+    this.threadCollaborationModes.delete(threadId);
+    this.threadTurnSettings.delete(threadId);
 
     if (thread.path) {
       try {
@@ -1425,10 +1567,15 @@ export const codexAppServer = new CodexAppServer();
 export {
   buildNotFoundError,
   buildUnsupportedError,
+  DEFAULT_CODEX_APPROVAL_POLICY,
+  DEFAULT_CODEX_SANDBOX,
   INTERACTIVE_SOURCE_KINDS,
+  getCodexThreadOptions,
   isInteractiveThread,
-  mapPermissionModeToCodexOptions,
+  normalizeCodexApprovalPolicy,
+  normalizeCodexCollaborationMode,
   normalizeInputItems,
+  normalizeReasoningEffort,
   normalizeThreadTokenUsage,
   sendWriterMessage,
   sessionSourceKind,

@@ -10,6 +10,7 @@ import { useChatRealtimeHandlers } from '../hooks/useChatRealtimeHandlers';
 import { useChatComposerState } from '../hooks/useChatComposerState';
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
+import CodexSessionControlsBar from './subcomponents/CodexSessionControlsBar';
 
 const CHAT_REALTIME_MESSAGE_TYPES = new Set([
   'session-created',
@@ -106,6 +107,10 @@ function ChatInterface({
     setClaudeModel,
     codexModel,
     setCodexModel,
+    codexInteractionMode,
+    setCodexInteractionMode,
+    codexApprovalPolicy,
+    setCodexApprovalPolicy,
     codexReasoningEffort,
     setCodexReasoningEffort,
     geminiModel,
@@ -217,12 +222,14 @@ function ChatInterface({
     currentSessionId,
     provider,
     permissionMode,
+    codexInteractionMode,
+    codexApprovalPolicy,
     cyclePermissionMode,
-     cursorModel,
-     claudeModel,
-     codexModel,
-      codexReasoningEffort,
-     geminiModel,
+    cursorModel,
+    claudeModel,
+    codexModel,
+    codexReasoningEffort,
+    geminiModel,
     isLoading,
     canAbortSession,
     tokenBudget,
@@ -275,6 +282,7 @@ function ChatInterface({
     setClaudeStatus,
     setTokenBudget,
     setIsSystemSessionChange,
+    pendingPermissionRequests,
     setPendingPermissionRequests,
     pendingViewSessionRef,
     streamBufferRef,
@@ -295,8 +303,9 @@ function ChatInterface({
     sendMessage({
       type: 'get-pending-permissions',
       sessionId: selectedSession.id,
+      provider: selectedSession.__provider || provider,
     });
-  }, [selectedSession?.id, sendMessage, ws]);
+  }, [provider, selectedSession?.__provider, selectedSession?.id, sendMessage, ws]);
 
   useEffect(() => {
     if (!isLoading || !canAbortSession) {
@@ -351,6 +360,7 @@ function ChatInterface({
   return (
     <>
       <div className="flex h-full flex-col">
+
         <ChatMessagesPane
           scrollContainerRef={scrollContainerRef}
           onWheel={handleScroll}
@@ -408,6 +418,10 @@ function ChatInterface({
           provider={provider}
           permissionMode={permissionMode}
           onModeSwitch={cyclePermissionMode}
+          codexInteractionMode={codexInteractionMode}
+          setCodexInteractionMode={setCodexInteractionMode}
+          codexApprovalPolicy={codexApprovalPolicy}
+          setCodexApprovalPolicy={setCodexApprovalPolicy}
           thinkingMode={thinkingMode}
           setThinkingMode={setThinkingMode}
           codexReasoningEffort={codexReasoningEffort}

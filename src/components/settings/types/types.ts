@@ -5,7 +5,8 @@ export type AgentProvider = 'claude' | 'cursor' | 'codex' | 'gemini';
 export type AgentCategory = 'account' | 'permissions' | 'mcp';
 export type ProjectSortOrder = 'name' | 'date';
 export type SaveStatus = 'success' | 'error' | null;
-export type CodexPermissionMode = 'acceptEdits' | 'plan';
+export type CodexInteractionMode = 'edit' | 'plan';
+export type CodexApprovalPolicy = 'untrusted' | 'on-request' | 'never';
 export type GeminiPermissionMode = 'default' | 'auto_edit' | 'yolo';
 export type McpImportMode = 'form' | 'json';
 export type McpScope = 'user' | 'local';
@@ -135,7 +136,11 @@ export type CodeEditorSettingsState = {
 export type SettingsStoragePayload = {
   claude: ClaudePermissionsState & { projectSortOrder: ProjectSortOrder; lastUpdated: string };
   cursor: CursorPermissionsState & { lastUpdated: string };
-  codex: { permissionMode: CodexPermissionMode; lastUpdated: string };
+  codex: {
+    interactionMode: CodexInteractionMode;
+    approvalPolicy: CodexApprovalPolicy;
+    lastUpdated: string;
+  };
 };
 
 export type SettingsProps = {

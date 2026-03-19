@@ -18,8 +18,10 @@ export default function AgentsSettingsTab({
   onClaudePermissionsChange,
   cursorPermissions,
   onCursorPermissionsChange,
-  codexPermissionMode,
-  onCodexPermissionModeChange,
+  codexInteractionMode,
+  onCodexInteractionModeChange,
+  codexApprovalPolicy,
+  onCodexApprovalPolicyChange,
   geminiPermissionMode,
   onGeminiPermissionModeChange,
   mcpServers,
@@ -89,8 +91,10 @@ export default function AgentsSettingsTab({
           onClaudePermissionsChange={onClaudePermissionsChange}
           cursorPermissions={cursorPermissions}
           onCursorPermissionsChange={onCursorPermissionsChange}
-          codexPermissionMode={codexPermissionMode}
-          onCodexPermissionModeChange={onCodexPermissionModeChange}
+          codexInteractionMode={codexInteractionMode}
+          onCodexInteractionModeChange={onCodexInteractionModeChange}
+          codexApprovalPolicy={codexApprovalPolicy}
+          onCodexApprovalPolicyChange={onCodexApprovalPolicyChange}
           geminiPermissionMode={geminiPermissionMode}
           onGeminiPermissionModeChange={onGeminiPermissionModeChange}
           mcpServers={mcpServers}

@@ -176,12 +176,14 @@ export default function ChatMessagesPane({
 
   const renderMessage = useCallback((message: ChatMessage, index: number) => {
     const prevMessage = index > 0 ? visibleMessages[index - 1] : null;
+    const nextMessage = index < visibleMessages.length - 1 ? visibleMessages[index + 1] : null;
 
     return (
       <MessageComponent
         key={getMessageKey(message)}
         message={message}
         prevMessage={prevMessage}
+        nextMessage={nextMessage}
         createDiff={createDiff}
         onFileOpen={onFileOpen}
         onShowSettings={onShowSettings}

@@ -23,6 +23,9 @@ const compareVersions = (v1: string, v2: string) => {
 
 export type InstallMode = 'git' | 'npm';
 
+const INSTALL_MODE_CHECK_DELAY_MS = 4000;
+const VERSION_CHECK_DELAY_MS = 8000;
+
 export const useVersionCheck = (owner: string, repo: string) => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
@@ -41,7 +44,12 @@ export const useVersionCheck = (owner: string, repo: string) => {
         // Default to git on error
       }
     };
-    fetchInstallMode();
+
+    const timer = window.setTimeout(() => {
+      void fetchInstallMode();
+    }, INSTALL_MODE_CHECK_DELAY_MS);
+
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -79,9 +87,18 @@ export const useVersionCheck = (owner: string, repo: string) => {
       }
     };
 
-    checkVersion();
-    const interval = setInterval(checkVersion, 5 * 60 * 1000); // Check every 5 minutes
-    return () => clearInterval(interval);
+    let interval: number | null = null;
+    const timer = window.setTimeout(() => {
+      void checkVersion();
+      interval = window.setInterval(checkVersion, 5 * 60 * 1000);
+    }, VERSION_CHECK_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+      if (interval !== null) {
+        window.clearInterval(interval);
+      }
+    };
   }, [owner, repo]);
 
   return { updateAvailable, latestVersion, currentVersion: version, releaseInfo, installMode };

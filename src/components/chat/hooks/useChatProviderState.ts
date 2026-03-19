@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../../../utils/api';
 import { CLAUDE_MODELS, CODEX_MODELS, CURSOR_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
-import type { PendingPermissionRequest, PermissionMode } from '../types/types';
+import type {
+  CodexApprovalPolicy,
+  CodexInteractionMode,
+  PendingPermissionRequest,
+  PermissionMode,
+} from '../types/types';
 import type { ProjectSession, SessionProvider } from '../../../types/app';
 import { safeLocalStorage } from '../utils/chatStorage';
 import {
@@ -11,15 +16,28 @@ import {
 } from '../constants/codexReasoningEfforts';
 
 const CODEX_SETTINGS_KEY = 'codex-settings';
-const DEFAULT_CODEX_PERMISSION_MODE = 'plan';
+const DEFAULT_CODEX_INTERACTION_MODE: CodexInteractionMode = 'edit';
+const DEFAULT_CODEX_APPROVAL_POLICY: CodexApprovalPolicy = 'on-request';
+const CODEX_INTERACTION_MODE_PREFIX = 'codex-interaction-mode-';
+const CODEX_APPROVAL_POLICY_PREFIX = 'codex-approval-policy-';
 
-const isCodexPermissionMode = (value: unknown): value is 'acceptEdits' | 'plan' =>
-  value === 'acceptEdits' || value === 'plan';
+const isCodexInteractionMode = (value: unknown): value is CodexInteractionMode => (
+  value === 'edit' || value === 'plan'
+);
 
-const getStoredProvider = (): SessionProvider =>
-  (safeLocalStorage.getItem('selected-provider') as SessionProvider) || 'claude';
+const isCodexApprovalPolicy = (value: unknown): value is CodexApprovalPolicy => (
+  value === 'untrusted' || value === 'on-request' || value === 'never'
+);
 
-const readStoredCodexSettings = (): { permissionMode?: unknown; reasoningEffort?: unknown } => {
+const getStoredProvider = (): SessionProvider => (
+  (safeLocalStorage.getItem('selected-provider') as SessionProvider) || 'claude'
+);
+
+const readStoredCodexSettings = (): {
+  interactionMode?: unknown;
+  approvalPolicy?: unknown;
+  reasoningEffort?: unknown;
+} => {
   const savedSettings = safeLocalStorage.getItem(CODEX_SETTINGS_KEY);
   if (!savedSettings) {
     return {};
@@ -33,14 +51,25 @@ const readStoredCodexSettings = (): { permissionMode?: unknown; reasoningEffort?
   }
 };
 
-const getDefaultCodexPermissionMode = (): 'acceptEdits' | 'plan' => {
+const getDefaultCodexInteractionMode = (): CodexInteractionMode => {
   const parsed = readStoredCodexSettings();
-  return isCodexPermissionMode(parsed.permissionMode) ? parsed.permissionMode : DEFAULT_CODEX_PERMISSION_MODE;
+  return isCodexInteractionMode(parsed.interactionMode)
+    ? parsed.interactionMode
+    : DEFAULT_CODEX_INTERACTION_MODE;
+};
+
+const getDefaultCodexApprovalPolicy = (): CodexApprovalPolicy => {
+  const parsed = readStoredCodexSettings();
+  return isCodexApprovalPolicy(parsed.approvalPolicy)
+    ? parsed.approvalPolicy
+    : DEFAULT_CODEX_APPROVAL_POLICY;
 };
 
 const getDefaultCodexReasoningEffort = (): CodexReasoningEffort => {
   const parsed = readStoredCodexSettings();
-  return isCodexReasoningEffort(parsed.reasoningEffort) ? parsed.reasoningEffort : DEFAULT_CODEX_REASONING_EFFORT;
+  return isCodexReasoningEffort(parsed.reasoningEffort)
+    ? parsed.reasoningEffort
+    : DEFAULT_CODEX_REASONING_EFFORT;
 };
 
 interface UseChatProviderStateArgs {
@@ -49,23 +78,27 @@ interface UseChatProviderStateArgs {
 
 export function useChatProviderState({ selectedSession }: UseChatProviderStateArgs) {
   const [provider, setProvider] = useState<SessionProvider>(getStoredProvider);
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>(() => (
-    getStoredProvider() === 'codex' ? getDefaultCodexPermissionMode() : 'default'
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
+  const [codexInteractionMode, setCodexInteractionModeState] = useState<CodexInteractionMode>(() => (
+    getStoredProvider() === 'codex' ? getDefaultCodexInteractionMode() : DEFAULT_CODEX_INTERACTION_MODE
+  ));
+  const [codexApprovalPolicy, setCodexApprovalPolicyState] = useState<CodexApprovalPolicy>(() => (
+    getStoredProvider() === 'codex' ? getDefaultCodexApprovalPolicy() : DEFAULT_CODEX_APPROVAL_POLICY
   ));
   const [codexReasoningEffort, setCodexReasoningEffort] = useState<CodexReasoningEffort>(getDefaultCodexReasoningEffort);
   const [pendingPermissionRequests, setPendingPermissionRequests] = useState<PendingPermissionRequest[]>([]);
-  const [cursorModel, setCursorModel] = useState<string>(() => {
-    return localStorage.getItem('cursor-model') || CURSOR_MODELS.DEFAULT;
-  });
-  const [claudeModel, setClaudeModel] = useState<string>(() => {
-    return localStorage.getItem('claude-model') || CLAUDE_MODELS.DEFAULT;
-  });
-  const [codexModel, setCodexModel] = useState<string>(() => {
-    return localStorage.getItem('codex-model') || CODEX_MODELS.DEFAULT;
-  });
-  const [geminiModel, setGeminiModel] = useState<string>(() => {
-    return localStorage.getItem('gemini-model') || GEMINI_MODELS.DEFAULT;
-  });
+  const [cursorModel, setCursorModel] = useState<string>(() => (
+    localStorage.getItem('cursor-model') || CURSOR_MODELS.DEFAULT
+  ));
+  const [claudeModel, setClaudeModel] = useState<string>(() => (
+    localStorage.getItem('claude-model') || CLAUDE_MODELS.DEFAULT
+  ));
+  const [codexModel, setCodexModel] = useState<string>(() => (
+    localStorage.getItem('codex-model') || CODEX_MODELS.DEFAULT
+  ));
+  const [geminiModel, setGeminiModel] = useState<string>(() => (
+    localStorage.getItem('gemini-model') || GEMINI_MODELS.DEFAULT
+  ));
 
   const lastProviderRef = useRef(provider);
   const hasPersistedCodexReasoningRef = useRef(false);
@@ -73,28 +106,32 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   useEffect(() => {
     if (!selectedSession?.id) {
       if (provider === 'codex') {
-        setPermissionMode(getDefaultCodexPermissionMode());
+        setCodexInteractionModeState(getDefaultCodexInteractionMode());
+        setCodexApprovalPolicyState(getDefaultCodexApprovalPolicy());
       }
       return;
     }
 
-    const savedMode = localStorage.getItem('permissionMode-' + selectedSession.id);
     if (provider === 'codex') {
-      setPermissionMode(isCodexPermissionMode(savedMode) ? savedMode : getDefaultCodexPermissionMode());
-    } else {
-      setPermissionMode((savedMode as PermissionMode) || 'default');
-    }
-  }, [selectedSession?.id, provider]);
+      const savedInteractionMode = safeLocalStorage.getItem(`${CODEX_INTERACTION_MODE_PREFIX}${selectedSession.id}`);
+      const savedApprovalPolicy = safeLocalStorage.getItem(`${CODEX_APPROVAL_POLICY_PREFIX}${selectedSession.id}`);
 
-  // When provider changes to codex, ensure valid mode
-  useEffect(() => {
-    if (provider !== 'codex') {
+      setCodexInteractionModeState(
+        isCodexInteractionMode(savedInteractionMode)
+          ? savedInteractionMode
+          : getDefaultCodexInteractionMode(),
+      );
+      setCodexApprovalPolicyState(
+        isCodexApprovalPolicy(savedApprovalPolicy)
+          ? savedApprovalPolicy
+          : getDefaultCodexApprovalPolicy(),
+      );
       return;
     }
-    if (!isCodexPermissionMode(permissionMode)) {
-      setPermissionMode(getDefaultCodexPermissionMode());
-    }
-  }, [permissionMode, provider]);
+
+    const savedMode = safeLocalStorage.getItem(`permissionMode-${selectedSession.id}`);
+    setPermissionMode((savedMode as PermissionMode) || 'default');
+  }, [selectedSession?.id, provider]);
 
   useEffect(() => {
     if (!selectedSession?.__provider || selectedSession.__provider === provider) {
@@ -155,21 +192,40 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     }));
   }, [codexReasoningEffort]);
 
-  const cyclePermissionMode = useCallback(() => {
-    const modes: PermissionMode[] =
-      provider === 'codex'
-        ? ['acceptEdits', 'plan']
-        : ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
+  const setCodexInteractionMode = useCallback((nextMode: CodexInteractionMode) => {
+    setCodexInteractionModeState(nextMode);
 
+    if (selectedSession?.id) {
+      safeLocalStorage.setItem(`${CODEX_INTERACTION_MODE_PREFIX}${selectedSession.id}`, nextMode);
+    }
+  }, [selectedSession?.id]);
+
+  const setCodexApprovalPolicy = useCallback((nextPolicy: CodexApprovalPolicy) => {
+    setCodexApprovalPolicyState(nextPolicy);
+
+    if (selectedSession?.id) {
+      safeLocalStorage.setItem(`${CODEX_APPROVAL_POLICY_PREFIX}${selectedSession.id}`, nextPolicy);
+    }
+  }, [selectedSession?.id]);
+
+  const cyclePermissionMode = useCallback(() => {
+    if (provider === 'codex') {
+      const modes: CodexInteractionMode[] = ['edit', 'plan'];
+      const currentIndex = modes.indexOf(codexInteractionMode);
+      const nextMode = modes[(currentIndex + 1) % modes.length];
+      setCodexInteractionMode(nextMode);
+      return;
+    }
+
+    const modes: PermissionMode[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
     const currentIndex = modes.indexOf(permissionMode);
-    const nextIndex = (currentIndex + 1) % modes.length;
-    const nextMode = modes[nextIndex];
+    const nextMode = modes[(currentIndex + 1) % modes.length];
     setPermissionMode(nextMode);
 
     if (selectedSession?.id) {
-      localStorage.setItem(`permissionMode-${selectedSession.id}`, nextMode);
+      safeLocalStorage.setItem(`permissionMode-${selectedSession.id}`, nextMode);
     }
-  }, [permissionMode, provider, selectedSession?.id]);
+  }, [codexInteractionMode, permissionMode, provider, selectedSession?.id, setCodexInteractionMode]);
 
   return {
     provider,
@@ -180,6 +236,10 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     setClaudeModel,
     codexModel,
     setCodexModel,
+    codexInteractionMode,
+    setCodexInteractionMode,
+    codexApprovalPolicy,
+    setCodexApprovalPolicy,
     codexReasoningEffort,
     setCodexReasoningEffort,
     geminiModel,

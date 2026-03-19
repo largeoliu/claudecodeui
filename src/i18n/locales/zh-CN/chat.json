@@ -61,7 +61,8 @@
   },
   "thinking": {
     "title": "思考中...",
-    "emoji": "💭 思考中..."
+    "emoji": "思考中...",
+    "completed": "思考过程"
   },
   "json": {
     "response": "JSON 响应"
@@ -90,6 +91,21 @@
     "modes": {
       "acceptEdits": "编辑模式",
       "plan": "计划模式"
+    },
+    "interactionMode": {
+      "title": "模式",
+      "modes": {
+        "edit": "编辑",
+        "plan": "计划"
+      }
+    },
+    "approvalPolicy": {
+      "title": "审批",
+      "modes": {
+        "untrusted": "严格",
+        "onRequest": "按需",
+        "never": "不审批"
+      }
     },
     "reasoning": {
       "title": "思考强度",

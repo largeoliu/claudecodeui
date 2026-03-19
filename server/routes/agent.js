@@ -972,7 +972,8 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         cwd: finalProjectPath,
         sessionId: null,
         model: model || CODEX_MODELS.DEFAULT,
-        permissionMode: 'acceptEdits'
+        interactionMode: 'edit',
+        approvalPolicy: 'never'
       }, writer);
     } else if (provider === 'gemini') {
       console.log('✨ Starting Gemini CLI session');

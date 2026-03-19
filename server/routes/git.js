@@ -1485,4 +1485,18 @@ router.post('/delete-untracked', async (req, res) => {
   }
 });
 
+export {
+  buildFilePathCandidates,
+  getGitErrorDetails,
+  isMissingHeadRevisionError,
+  normalizeRepositoryRelativeFilePath,
+  parseStatusFilePaths,
+  stripDiffHeaders,
+  validateBranchName,
+  validateCommitRef,
+  validateFilePath,
+  validateProjectPath,
+  validateRemoteName,
+};
+
 export default router;

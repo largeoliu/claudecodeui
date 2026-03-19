@@ -11,6 +11,8 @@ const TasksSettingsContext = createContext({
   isCheckingInstallation: true
 });
 
+const INITIAL_TASKMASTER_CHECK_DELAY_MS = 2000;
+
 export const useTasksSettings = () => {
   const context = useContext(TasksSettingsContext);
   if (!context) {
@@ -38,6 +40,14 @@ export const TasksSettingsProvider = ({ children }) => {
 
   // Check TaskMaster installation status asynchronously on component mount
   useEffect(() => {
+    if (!tasksEnabled) {
+      setIsTaskMasterInstalled(false);
+      setIsTaskMasterReady(false);
+      setInstallationStatus(null);
+      setIsCheckingInstallation(false);
+      return undefined;
+    }
+
     const checkInstallation = async () => {
       try {
         const response = await api.get('/taskmaster/installation-status');
@@ -67,9 +77,16 @@ export const TasksSettingsProvider = ({ children }) => {
       }
     };
 
-    // Run check asynchronously without blocking initial render
-    setTimeout(checkInstallation, 0);
-  }, []);
+    setIsCheckingInstallation(true);
+
+    const timer = window.setTimeout(() => {
+      void checkInstallation();
+    }, INITIAL_TASKMASTER_CHECK_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [tasksEnabled]);
 
   const toggleTasksEnabled = () => {
     setTasksEnabled(prev => !prev);

@@ -20,6 +20,7 @@ type UseProjectsStateArgs = {
 
 type FetchProjectsOptions = {
   showLoadingState?: boolean;
+  lightweight?: boolean;
 };
 
 const serialize = (value: unknown) => JSON.stringify(value ?? null);
@@ -154,13 +155,14 @@ export function useProjectsState({
   const [externalMessageUpdate, setExternalMessageUpdate] = useState(0);
 
   const loadingProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deferredHydrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchProjects = useCallback(async ({ showLoadingState = true }: FetchProjectsOptions = {}) => {
+  const fetchProjects = useCallback(async ({ showLoadingState = true, lightweight = false }: FetchProjectsOptions = {}) => {
     try {
       if (showLoadingState) {
         setIsLoadingProjects(true);
       }
-      const response = await api.projects();
+      const response = await api.projects({ lightweight });
       const projectData = (await response.json()) as Project[];
 
       setProjects((prevProjects) => {
@@ -192,8 +194,37 @@ export function useProjectsState({
   }, []);
 
   useEffect(() => {
-    void fetchProjects();
-  }, [fetchProjects]);
+    let isCancelled = false;
+
+    if (deferredHydrationTimeoutRef.current) {
+      clearTimeout(deferredHydrationTimeoutRef.current);
+      deferredHydrationTimeoutRef.current = null;
+    }
+
+    const loadInitialProjects = async () => {
+      const shouldStartLightweight = !sessionId;
+      await fetchProjects({ lightweight: shouldStartLightweight });
+
+      if (isCancelled || !shouldStartLightweight) {
+        return;
+      }
+
+      deferredHydrationTimeoutRef.current = setTimeout(() => {
+        void fetchProjects({ showLoadingState: false, lightweight: false });
+        deferredHydrationTimeoutRef.current = null;
+      }, 1200);
+    };
+
+    void loadInitialProjects();
+
+    return () => {
+      isCancelled = true;
+      if (deferredHydrationTimeoutRef.current) {
+        clearTimeout(deferredHydrationTimeoutRef.current);
+        deferredHydrationTimeoutRef.current = null;
+      }
+    };
+  }, [fetchProjects, sessionId]);
 
   // Auto-select the project when there is only one, so the user lands on the new session page
   useEffect(() => {
@@ -293,6 +324,11 @@ export function useProjectsState({
       if (loadingProgressTimeoutRef.current) {
         clearTimeout(loadingProgressTimeoutRef.current);
         loadingProgressTimeoutRef.current = null;
+      }
+
+      if (deferredHydrationTimeoutRef.current) {
+        clearTimeout(deferredHydrationTimeoutRef.current);
+        deferredHydrationTimeoutRef.current = null;
       }
     };
   }, []);

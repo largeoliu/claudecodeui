@@ -2,7 +2,11 @@ import { useState } from 'react';
 import { AlertTriangle, Plus, Shield, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../../../../../../../shared/view/ui';
-import type { CodexPermissionMode, GeminiPermissionMode } from '../../../../../types/types';
+import type {
+  CodexApprovalPolicy,
+  CodexInteractionMode,
+  GeminiPermissionMode,
+} from '../../../../../types/types';
 
 const COMMON_CLAUDE_TOOLS = [
   'Bash(git log:*)',
@@ -472,11 +476,18 @@ function CursorPermissions({
 
 type CodexPermissionsProps = {
   agent: 'codex';
-  permissionMode: CodexPermissionMode;
-  onPermissionModeChange: (value: CodexPermissionMode) => void;
+  interactionMode: CodexInteractionMode;
+  onInteractionModeChange: (value: CodexInteractionMode) => void;
+  approvalPolicy: CodexApprovalPolicy;
+  onApprovalPolicyChange: (value: CodexApprovalPolicy) => void;
 };
 
-function CodexPermissions({ permissionMode, onPermissionModeChange }: Omit<CodexPermissionsProps, 'agent'>) {
+function CodexPermissions({
+  interactionMode,
+  onInteractionModeChange,
+  approvalPolicy,
+  onApprovalPolicyChange,
+}: Omit<CodexPermissionsProps, 'agent'>) {
   const { t } = useTranslation('settings');
 
   return (
@@ -484,55 +495,141 @@ function CodexPermissions({ permissionMode, onPermissionModeChange }: Omit<Codex
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <Shield className="h-5 w-5 text-green-500" />
-          <h3 className="text-lg font-medium text-foreground">{t('permissions.codex.permissionMode')}</h3>
+          <h3 className="text-lg font-medium text-foreground">{t('permissions.codex.interactionMode')}</h3>
         </div>
-        <p className="text-sm text-muted-foreground">{t('permissions.codex.description')}</p>
+        <p className="text-sm text-muted-foreground">{t('permissions.codex.interactionDescription')}</p>
 
         <div
-          className={`cursor-pointer rounded-lg border p-4 transition-all ${permissionMode === 'acceptEdits'
+          className={`cursor-pointer rounded-lg border p-4 transition-all ${interactionMode === 'edit'
             ? 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20'
             : 'border-border bg-card/50 active:border-border active:bg-accent/50'
             }`}
-          onClick={() => onPermissionModeChange('acceptEdits')}
+          onClick={() => onInteractionModeChange('edit')}
         >
           <label className="flex cursor-pointer items-start gap-3">
             <input
               type="radio"
-              name="codexPermissionMode"
-              checked={permissionMode === 'acceptEdits'}
-              onChange={() => onPermissionModeChange('acceptEdits')}
+              name="codexInteractionMode"
+              checked={interactionMode === 'edit'}
+              onChange={() => onInteractionModeChange('edit')}
               className="mt-1 h-4 w-4 text-green-600"
             />
             <div>
-              <div className="font-medium text-green-900 dark:text-green-100">{t('permissions.codex.modes.acceptEdits.title')}</div>
+              <div className="font-medium text-green-900 dark:text-green-100">{t('permissions.codex.interactionModes.edit.title')}</div>
               <div className="text-sm text-green-700 dark:text-green-300">
-                {t('permissions.codex.modes.acceptEdits.description')}
+                {t('permissions.codex.interactionModes.edit.description')}
               </div>
             </div>
           </label>
         </div>
 
         <div
-          className={`cursor-pointer rounded-lg border p-4 transition-all ${permissionMode === 'plan'
+          className={`cursor-pointer rounded-lg border p-4 transition-all ${interactionMode === 'plan'
             ? 'border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-900/20'
             : 'border-border bg-card/50 active:border-border active:bg-accent/50'
             }`}
-          onClick={() => onPermissionModeChange('plan')}
+          onClick={() => onInteractionModeChange('plan')}
         >
           <label className="flex cursor-pointer items-start gap-3">
             <input
               type="radio"
-              name="codexPermissionMode"
-              checked={permissionMode === 'plan'}
-              onChange={() => onPermissionModeChange('plan')}
+              name="codexInteractionMode"
+              checked={interactionMode === 'plan'}
+              onChange={() => onInteractionModeChange('plan')}
               className="mt-1 h-4 w-4 text-blue-600"
             />
             <div>
               <div className="font-medium text-blue-900 dark:text-blue-100">
-                {t('permissions.codex.modes.plan.title')}
+                {t('permissions.codex.interactionModes.plan.title')}
               </div>
               <div className="text-sm text-blue-700 dark:text-blue-300">
-                {t('permissions.codex.modes.plan.description')}
+                {t('permissions.codex.interactionModes.plan.description')}
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-orange-500" />
+          <h3 className="text-lg font-medium text-foreground">{t('permissions.codex.approvalPolicy')}</h3>
+        </div>
+        <p className="text-sm text-muted-foreground">{t('permissions.codex.approvalDescription')}</p>
+
+        <div
+          className={`cursor-pointer rounded-lg border p-4 transition-all ${approvalPolicy === 'untrusted'
+            ? 'border-amber-400 bg-amber-50 dark:border-amber-600 dark:bg-amber-900/20'
+            : 'border-border bg-card/50 active:border-border active:bg-accent/50'
+            }`}
+          onClick={() => onApprovalPolicyChange('untrusted')}
+        >
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="radio"
+              name="codexApprovalPolicy"
+              checked={approvalPolicy === 'untrusted'}
+              onChange={() => onApprovalPolicyChange('untrusted')}
+              className="mt-1 h-4 w-4 text-amber-600"
+            />
+            <div>
+              <div className="font-medium text-amber-900 dark:text-amber-100">
+                {t('permissions.codex.approvalModes.untrusted.title')}
+              </div>
+              <div className="text-sm text-amber-700 dark:text-amber-300">
+                {t('permissions.codex.approvalModes.untrusted.description')}
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div
+          className={`cursor-pointer rounded-lg border p-4 transition-all ${approvalPolicy === 'on-request'
+            ? 'border-sky-400 bg-sky-50 dark:border-sky-600 dark:bg-sky-900/20'
+            : 'border-border bg-card/50 active:border-border active:bg-accent/50'
+            }`}
+          onClick={() => onApprovalPolicyChange('on-request')}
+        >
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="radio"
+              name="codexApprovalPolicy"
+              checked={approvalPolicy === 'on-request'}
+              onChange={() => onApprovalPolicyChange('on-request')}
+              className="mt-1 h-4 w-4 text-sky-600"
+            />
+            <div>
+              <div className="font-medium text-sky-900 dark:text-sky-100">
+                {t('permissions.codex.approvalModes.onRequest.title')}
+              </div>
+              <div className="text-sm text-sky-700 dark:text-sky-300">
+                {t('permissions.codex.approvalModes.onRequest.description')}
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div
+          className={`cursor-pointer rounded-lg border p-4 transition-all ${approvalPolicy === 'never'
+            ? 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20'
+            : 'border-border bg-card/50 active:border-border active:bg-accent/50'
+            }`}
+          onClick={() => onApprovalPolicyChange('never')}
+        >
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="radio"
+              name="codexApprovalPolicy"
+              checked={approvalPolicy === 'never'}
+              onChange={() => onApprovalPolicyChange('never')}
+              className="mt-1 h-4 w-4 text-green-600"
+            />
+            <div>
+              <div className="font-medium text-green-900 dark:text-green-100">
+                {t('permissions.codex.approvalModes.never.title')}
+              </div>
+              <div className="text-sm text-green-700 dark:text-green-300">
+                {t('permissions.codex.approvalModes.never.description')}
               </div>
             </div>
           </label>
@@ -543,8 +640,11 @@ function CodexPermissions({ permissionMode, onPermissionModeChange }: Omit<Codex
             {t('permissions.codex.technicalDetails')}
           </summary>
           <div className="mt-2 space-y-2 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-            <p><strong>{t('permissions.codex.modes.acceptEdits.title')}:</strong> {t('permissions.codex.technicalInfo.acceptEdits')}</p>
-            <p><strong>{t('permissions.codex.modes.plan.title')}:</strong> {t('permissions.codex.technicalInfo.plan')}</p>
+            <p><strong>{t('permissions.codex.interactionModes.edit.title')}:</strong> {t('permissions.codex.technicalInfo.edit')}</p>
+            <p><strong>{t('permissions.codex.interactionModes.plan.title')}:</strong> {t('permissions.codex.technicalInfo.plan')}</p>
+            <p><strong>{t('permissions.codex.approvalModes.untrusted.title')}:</strong> {t('permissions.codex.technicalInfo.untrusted')}</p>
+            <p><strong>{t('permissions.codex.approvalModes.onRequest.title')}:</strong> {t('permissions.codex.technicalInfo.onRequest')}</p>
+            <p><strong>{t('permissions.codex.approvalModes.never.title')}:</strong> {t('permissions.codex.technicalInfo.never')}</p>
             <p className="text-xs opacity-75">{t('permissions.codex.technicalInfo.overrideNote')}</p>
           </div>
         </details>

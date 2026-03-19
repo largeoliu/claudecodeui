@@ -394,23 +394,42 @@
       "rmRf": "- 阻止递归删除"
     },
     "codex": {
-      "permissionMode": "权限模式",
-      "description": "控制 Codex 是直接编辑，还是只进入计划模式",
-      "modes": {
-        "acceptEdits": {
+      "interactionMode": "交互模式",
+      "interactionDescription": "控制 Codex 是保持编辑模式，还是把每条提示都当成规划请求来处理。",
+      "interactionModes": {
+        "edit": {
           "title": "编辑模式",
-          "description": "工作区内的所有命令自动运行。Codex 可以直接修改文件。"
+          "description": "按普通提示执行实现、修改文件和运行命令。"
         },
         "plan": {
           "title": "计划模式",
-          "description": "Codex 只分析并生成实施方案，不会在聊天里修改文件或执行命令。"
+          "description": "让 Codex 先专注于分析和规划，再进入具体实现。"
+        }
+      },
+      "approvalPolicy": "审批策略",
+      "approvalDescription": "控制 Codex 在执行敏感操作前，何时暂停并请求确认。",
+      "approvalModes": {
+        "untrusted": {
+          "title": "严格审批",
+          "description": "除可信操作外，大多数动作都会先进入审批。"
+        },
+        "onRequest": {
+          "title": "按需审批",
+          "description": "由 Codex 自己判断当前操作是否需要先请求确认。"
+        },
+        "never": {
+          "title": "不审批",
+          "description": "在项目沙箱内执行时，不再弹出审批请求。"
         }
       },
       "technicalDetails": "技术详情",
       "technicalInfo": {
-        "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never。所有命令在项目目录内自动执行。",
-        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted。聊天提示会自动加上 /plan，Codex 只做分析和规划，不直接改文件。",
-        "overrideNote": "您可以使用聊天界面中的模式按钮按会话覆盖此设置。"
+        "edit": "使用普通提示，不会单独改变审批行为。",
+        "plan": "通过 Codex 原生协作模式切换到计划模式，并使用内建的规划指令。",
+        "untrusted": "更严格的审批策略。更多动作会在继续前先进入审核。",
+        "onRequest": "默认策略。由 Codex 判断当前动作是否需要审批。",
+        "never": "项目沙箱内的操作不再弹审批，但仍受沙箱边界限制。",
+        "overrideNote": "您可以在 Codex 聊天窗口顶部按会话覆盖这两项设置。"
       }
     },
     "actions": {

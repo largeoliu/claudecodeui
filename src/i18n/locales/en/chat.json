@@ -91,6 +91,21 @@
       "acceptEdits": "Edit Mode",
       "plan": "Plan Mode"
     },
+    "interactionMode": {
+      "title": "Mode",
+      "modes": {
+        "edit": "Edit",
+        "plan": "Plan"
+      }
+    },
+    "approvalPolicy": {
+      "title": "Approvals",
+      "modes": {
+        "untrusted": "Untrusted",
+        "onRequest": "On Request",
+        "never": "Never"
+      }
+    },
     "reasoning": {
       "title": "Reasoning Effort",
       "shortLabel": "Reasoning",

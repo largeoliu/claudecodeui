@@ -33,8 +33,10 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
     setNotificationPreferences,
     cursorPermissions,
     setCursorPermissions,
-    codexPermissionMode,
-    setCodexPermissionMode,
+    codexInteractionMode,
+    setCodexInteractionMode,
+    codexApprovalPolicy,
+    setCodexApprovalPolicy,
     mcpServers,
     cursorMcpServers,
     codexMcpServers,
@@ -120,7 +122,7 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
           <h2 className="text-base font-semibold text-foreground">{t('title')}</h2>
           <div className="flex items-center gap-2">
             {saveStatus === 'success' && (
-              <span className="text-xs text-muted-foreground animate-in fade-in">{t('saveStatus.success')}</span>
+              <span className="animate-in fade-in text-xs text-muted-foreground">{t('saveStatus.success')}</span>
             )}
             <Button
               variant="ghost"
@@ -169,8 +171,10 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
                   onClaudePermissionsChange={setClaudePermissions}
                   cursorPermissions={cursorPermissions}
                   onCursorPermissionsChange={setCursorPermissions}
-                  codexPermissionMode={codexPermissionMode}
-                  onCodexPermissionModeChange={setCodexPermissionMode}
+                  codexInteractionMode={codexInteractionMode}
+                  onCodexInteractionModeChange={setCodexInteractionMode}
+                  codexApprovalPolicy={codexApprovalPolicy}
+                  onCodexApprovalPolicyChange={setCodexApprovalPolicy}
                   geminiPermissionMode={geminiPermissionMode}
                   onGeminiPermissionModeChange={setGeminiPermissionMode}
                   mcpServers={mcpServers}

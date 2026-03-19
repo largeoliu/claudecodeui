@@ -103,14 +103,14 @@ export default function ClaudeStatus({
   const elapsedLabel =
     elapsedTime > 0
       ? t('claudeStatus.elapsed.label', {
-          time: formatElapsedTime(elapsedTime, t),
-          defaultValue: '{{time}} elapsed',
-        })
+        time: formatElapsedTime(elapsedTime, t),
+        defaultValue: '{{time}} elapsed',
+      })
       : t('claudeStatus.elapsed.startingNow', { defaultValue: 'Starting now' });
 
   return (
     <div className="animate-in slide-in-from-bottom mb-3 w-full duration-300 sm:mb-6">
-      <div className="relative mx-auto max-w-4xl overflow-hidden rounded-2xl border border-border/70 bg-card/90 shadow-md backdrop-blur-md">
+      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-2xl border border-border/70 bg-card/90 shadow-md backdrop-blur-md">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-sky-500/10 dark:from-primary/20 dark:to-sky-400/20" />
 
         <div className="relative px-3 py-3 sm:px-4 sm:py-3.5">

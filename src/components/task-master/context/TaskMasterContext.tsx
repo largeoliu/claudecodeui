@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api } from '../../../utils/api';
 import { useAuth } from '../../auth/context/AuthContext';
 import { useWebSocketMessageEffect } from '../../../contexts/WebSocketContext';
+import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
 import type {
   TaskMasterContextError,
   TaskMasterContextValue,
@@ -58,6 +59,7 @@ export function useTaskMaster() {
 
 export function TaskMasterProvider({ children }: { children: React.ReactNode }) {
   const { user, token, isLoading: isAuthLoading } = useAuth();
+  const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
 
   const [projects, setProjects] = useState<TaskMasterProject[]>([]);
   const [currentProject, setCurrentProjectState] = useState<TaskMasterProject | null>(null);
@@ -73,6 +75,7 @@ export function TaskMasterProvider({ children }: { children: React.ReactNode }) 
   const [error, setError] = useState<TaskMasterContextError | null>(null);
 
   const currentProjectNameRef = useRef<string | null>(null);
+  const shouldWarmTaskMaster = Boolean(tasksEnabled && isTaskMasterInstalled);
 
   useEffect(() => {
     currentProjectNameRef.current = currentProject?.name ?? null;
@@ -196,17 +199,16 @@ export function TaskMasterProvider({ children }: { children: React.ReactNode }) 
   }, [clearError, handleError, token, user]);
 
   useEffect(() => {
-    if (!isAuthLoading && user && token) {
-      void refreshProjects();
+    if (!isAuthLoading && user && token && shouldWarmTaskMaster) {
       void refreshMCPStatus();
     }
-  }, [isAuthLoading, refreshMCPStatus, refreshProjects, token, user]);
+  }, [isAuthLoading, refreshMCPStatus, shouldWarmTaskMaster, token, user]);
 
   useEffect(() => {
-    if (currentProject?.name && user && token) {
+    if (shouldWarmTaskMaster && currentProject?.name && user && token) {
       void refreshTasks();
     }
-  }, [currentProject?.name, refreshTasks, token, user]);
+  }, [currentProject?.name, refreshTasks, shouldWarmTaskMaster, token, user]);
 
   useWebSocketMessageEffect<TaskMasterWebSocketMessage>(
     (message) => {

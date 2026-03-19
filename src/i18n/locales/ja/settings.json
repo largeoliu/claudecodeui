@@ -409,7 +409,7 @@
       "technicalDetails": "技術的な詳細",
       "technicalInfo": {
         "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never。すべてのコマンドがプロジェクトディレクトリ内で自動実行。",
-        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted。チャットのプロンプトには /plan が付き、Codex は計画モードのままファイルを編集しません。",
+        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted。/plan を付けず、Codex のネイティブな collaborationMode で計画モードに切り替えます。",
         "overrideNote": "チャットインターフェースのモードボタンを使用してセッションごとに上書きできます。"
       }
     },

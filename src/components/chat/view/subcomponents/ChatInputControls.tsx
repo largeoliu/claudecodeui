@@ -1,10 +1,10 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CodexReasoningEffort } from '../../constants/codexReasoningEfforts';
-import type { PermissionMode, Provider } from '../../types/types';
+import type { CodexApprovalPolicy, CodexInteractionMode, PermissionMode, Provider } from '../../types/types';
 import CodexReasoningEffortSelector from './CodexReasoningEffortSelector';
 import ThinkingModeSelector from './ThinkingModeSelector';
-import TokenUsagePie from './TokenUsagePie';
+import { Pill, PillBar } from '../../../../shared/view/ui/PillBar';
 
 interface ChatInputControlsProps {
   permissionMode: PermissionMode | string;
@@ -12,16 +12,16 @@ interface ChatInputControlsProps {
   provider: Provider | string;
   thinkingMode: string;
   setThinkingMode: React.Dispatch<React.SetStateAction<string>>;
+  codexInteractionMode?: CodexInteractionMode;
+  onInteractionModeChange?: (value: CodexInteractionMode) => void;
+  approvalPolicy?: CodexApprovalPolicy;
+  onApprovalPolicyChange?: (value: CodexApprovalPolicy) => void;
   codexReasoningEffort: CodexReasoningEffort;
   setCodexReasoningEffort: (effort: CodexReasoningEffort) => void;
-  tokenBudget: { used?: number; total?: number } | null;
   slashCommandsCount: number;
   onToggleCommandMenu: () => void;
   hasInput: boolean;
   onClearInput: () => void;
-  isUserScrolledUp: boolean;
-  hasMessages: boolean;
-  onScrollToBottom: () => void;
 }
 
 export default function ChatInputControls({
@@ -30,114 +30,113 @@ export default function ChatInputControls({
   provider,
   thinkingMode,
   setThinkingMode,
+  codexInteractionMode,
+  onInteractionModeChange,
+  approvalPolicy,
+  onApprovalPolicyChange,
   codexReasoningEffort,
   setCodexReasoningEffort,
-  tokenBudget,
   slashCommandsCount,
   onToggleCommandMenu,
   hasInput,
   onClearInput,
-  isUserScrolledUp,
-  hasMessages,
-  onScrollToBottom,
 }: ChatInputControlsProps) {
   const { t } = useTranslation('chat');
 
   return (
     <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-      <button
-        type="button"
-        onClick={onModeSwitch}
-        className={`rounded-lg border px-2.5 py-1 text-sm font-medium transition-all duration-200 sm:px-3 sm:py-1.5 ${
-          permissionMode === 'acceptEdits'
-            ? 'border-green-300/60 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-600/40 dark:bg-green-900/15 dark:text-green-300 dark:hover:bg-green-900/25'
-            : 'border-primary/20 bg-primary/5 text-primary hover:bg-primary/10'
-        }`}
-        title={t('input.clickToChangeMode')}
-      >
-        <div className="flex items-center gap-1.5">
-          <div
-            className={`h-1.5 w-1.5 rounded-full ${
-              permissionMode === 'acceptEdits'
-                ? 'bg-green-500'
-                : 'bg-primary'
+      {provider !== 'codex' && (
+        <button
+          type="button"
+          onClick={onModeSwitch}
+          className={`rounded-lg border px-2.5 py-1 text-sm font-medium transition-all duration-200 sm:px-3 sm:py-1.5 ${permissionMode === 'acceptEdits'
+              ? 'border-green-300/60 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-600/40 dark:bg-green-900/15 dark:text-green-300 dark:hover:bg-green-900/25'
+              : 'border-primary/20 bg-primary/5 text-primary hover:bg-primary/10'
             }`}
-          />
-          <span>
-            {permissionMode === 'acceptEdits' && t('codex.modes.acceptEdits')}
-            {permissionMode === 'plan' && t('codex.modes.plan')}
-            {(permissionMode === 'default' || permissionMode === 'bypassPermissions') && t('codex.modes.acceptEdits')}
-          </span>
-        </div>
-      </button>
+          title={t('input.clickToChangeMode')}
+        >
+          <div className="flex items-center gap-1.5">
+            <div
+              className={`h-1.5 w-1.5 rounded-full ${permissionMode === 'acceptEdits'
+                  ? 'bg-green-500'
+                  : 'bg-primary'
+                }`}
+            />
+            <span>
+              {permissionMode === 'acceptEdits' && t('codex.modes.acceptEdits')}
+              {permissionMode === 'plan' && t('codex.modes.plan')}
+              {(permissionMode === 'default' || permissionMode === 'bypassPermissions') && t('codex.modes.acceptEdits')}
+            </span>
+          </div>
+        </button>
+      )}
 
       {provider === 'claude' && (
-        <ThinkingModeSelector selectedMode={thinkingMode} onModeChange={setThinkingMode} onClose={() => {}} className="" />
+        <ThinkingModeSelector selectedMode={thinkingMode} onModeChange={setThinkingMode} onClose={() => { }} className="" />
+      )}
+
+      {provider === 'codex' && codexInteractionMode && onInteractionModeChange && (
+        <div className="flex items-center gap-1.5">
+          <PillBar className="p-[2px] h-8">
+            <Pill
+              isActive={codexInteractionMode === 'edit'}
+              onClick={() => onInteractionModeChange('edit')}
+              className={`px-2 py-1 text-[11px] h-full ${codexInteractionMode === 'edit' ? 'text-green-700 dark:text-green-300' : ''}`}
+            >
+              {t('codex.interactionMode.modes.edit')}
+            </Pill>
+            <Pill
+              isActive={codexInteractionMode === 'plan'}
+              onClick={() => onInteractionModeChange('plan')}
+              className={`px-2 py-1 text-[11px] h-full ${codexInteractionMode === 'plan' ? 'text-blue-700 dark:text-blue-300' : ''}`}
+            >
+              {t('codex.interactionMode.modes.plan')}
+            </Pill>
+          </PillBar>
+        </div>
+      )}
+
+      {provider === 'codex' && approvalPolicy && onApprovalPolicyChange && (
+        <div className="flex items-center gap-1.5">
+          <PillBar className="p-[2px] h-8">
+            <Pill
+              isActive={approvalPolicy === 'untrusted'}
+              onClick={() => onApprovalPolicyChange('untrusted')}
+              className={`px-2 py-1 text-[11px] h-full ${approvalPolicy === 'untrusted' ? 'text-amber-700 dark:text-amber-300' : ''}`}
+            >
+              {t('codex.approvalPolicy.modes.untrusted')}
+            </Pill>
+            <Pill
+              isActive={approvalPolicy === 'on-request'}
+              onClick={() => onApprovalPolicyChange('on-request')}
+              className={`px-2 py-1 text-[11px] h-full ${approvalPolicy === 'on-request' ? 'text-sky-700 dark:text-sky-300' : ''}`}
+            >
+              {t('codex.approvalPolicy.modes.onRequest')}
+            </Pill>
+            <Pill
+              isActive={approvalPolicy === 'never'}
+              onClick={() => onApprovalPolicyChange('never')}
+              className={`px-2 py-1 text-[11px] h-full ${approvalPolicy === 'never' ? 'text-green-700 dark:text-green-300' : ''}`}
+            >
+              {t('codex.approvalPolicy.modes.never')}
+            </Pill>
+          </PillBar>
+        </div>
       )}
 
       {provider === 'codex' && (
         <CodexReasoningEffortSelector
           selectedEffort={codexReasoningEffort}
           onEffortChange={setCodexReasoningEffort}
-          onClose={() => {}}
-          className=""
+          onClose={() => { }}
+          className="h-8"
         />
       )}
 
-      <TokenUsagePie used={tokenBudget?.used || 0} total={tokenBudget?.total || parseInt(import.meta.env.VITE_CONTEXT_WINDOW) || 160000} />
 
-      <button
-        type="button"
-        onClick={onToggleCommandMenu}
-        className="relative flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground sm:h-8 sm:w-8"
-        title={t('input.showAllCommands')}
-      >
-        <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"
-          />
-        </svg>
-        {slashCommandsCount > 0 && (
-          <span
-            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground sm:h-5 sm:w-5"
-          >
-            {slashCommandsCount}
-          </span>
-        )}
-      </button>
 
-      {hasInput && (
-        <button
-          type="button"
-          onClick={onClearInput}
-          className="group flex h-7 w-7 items-center justify-center rounded-lg border border-border/50 bg-card shadow-sm transition-all duration-200 hover:bg-accent/60 sm:h-8 sm:w-8"
-          title={t('input.clearInput', { defaultValue: 'Clear input' })}
-        >
-          <svg
-            className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-foreground sm:h-4 sm:w-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      )}
 
-      {isUserScrolledUp && hasMessages && (
-        <button
-          onClick={onScrollToBottom}
-          className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm transition-all duration-200 hover:scale-105 hover:bg-primary/90 sm:h-8 sm:w-8"
-          title={t('input.scrollToBottom', { defaultValue: 'Scroll to bottom' })}
-        >
-          <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
-        </button>
-      )}
+
     </div>
   );
 }

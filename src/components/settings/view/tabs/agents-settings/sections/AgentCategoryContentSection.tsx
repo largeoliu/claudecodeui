@@ -11,8 +11,10 @@ export default function AgentCategoryContentSection({
   onClaudePermissionsChange,
   cursorPermissions,
   onCursorPermissionsChange,
-  codexPermissionMode,
-  onCodexPermissionModeChange,
+  codexInteractionMode,
+  onCodexInteractionModeChange,
+  codexApprovalPolicy,
+  onCodexApprovalPolicyChange,
   mcpServers,
   cursorMcpServers,
   codexMcpServers,
@@ -79,8 +81,10 @@ export default function AgentCategoryContentSection({
       {selectedCategory === 'permissions' && selectedAgent === 'codex' && (
         <PermissionsContent
           agent="codex"
-          permissionMode={codexPermissionMode}
-          onPermissionModeChange={onCodexPermissionModeChange}
+          interactionMode={codexInteractionMode}
+          onInteractionModeChange={onCodexInteractionModeChange}
+          approvalPolicy={codexApprovalPolicy}
+          onApprovalPolicyChange={onCodexApprovalPolicyChange}
         />
       )}
 

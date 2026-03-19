@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import type { PendingPermissionRequest } from '../../types/types';
 import { buildClaudeToolPermissionEntry, formatToolInputForDisplay } from '../../utils/chatPermissions';
 import { getClaudeSettings } from '../../utils/chatStorage';
@@ -25,12 +26,14 @@ export default function PermissionRequestsBanner({
   handlePermissionDecision,
   handleGrantToolPermission,
 }: PermissionRequestsBannerProps) {
+  const { t } = useTranslation('chat');
+
   if (!pendingPermissionRequests.length) {
     return null;
   }
 
   return (
-    <div className="mb-3 space-y-2">
+    <div className="mb-3 space-y-3">
       {pendingPermissionRequests.map((request) => {
         const CustomPanel = getPermissionPanel(request.toolName);
         if (CustomPanel) {
@@ -51,11 +54,7 @@ export default function PermissionRequestsBanner({
         const alreadyAllowed = isClaudeRequest && permissionEntry
           ? settings.allowedTools.includes(permissionEntry)
           : false;
-        const rememberLabel = isCodexApproval
-          ? 'Allow for session'
-          : alreadyAllowed
-            ? 'Allow (saved)'
-            : 'Allow & remember';
+
         const matchingRequestIds = permissionEntry
           ? pendingPermissionRequests
               .filter(
@@ -67,68 +66,91 @@ export default function PermissionRequestsBanner({
           : [request.requestId];
         const canRemember = Boolean(permissionEntry) && (isClaudeRequest || isCodexApproval);
 
+        // Parse human-readable action description
+        let actionDescription = rawInput;
+        try {
+          // If rawInput is a stringified JSON, we try to parse it
+          const parsedArgs = JSON.parse(rawInput || '{}');
+          if (request.toolName === 'Bash' || request.toolName === 'run_command') {
+            actionDescription = parsedArgs.command || rawInput;
+          } else if (['Read', 'View', 'view_file'].includes(request.toolName)) {
+            actionDescription = `${t('permissions.actions.read', { defaultValue: '阅读文件' })}: ${parsedArgs.path || parsedArgs.file_path || parsedArgs.AbsolutePath || ''}`;
+          } else if (['Write', 'Edit', 'replace_file_content', 'multi_replace_file_content', 'write_to_file'].includes(request.toolName)) {
+            actionDescription = `${t('permissions.actions.write', { defaultValue: '修改/写入文件' })}: ${parsedArgs.path || parsedArgs.file_path || parsedArgs.TargetFile || ''}`;
+          } else if (request.toolName === 'ApplyPatch') {
+            actionDescription = `${t('permissions.actions.patch', { defaultValue: '应用补丁' })}: ${parsedArgs.path || parsedArgs.file_path || ''}`;
+          } else if (request.toolName === 'search_web') {
+            actionDescription = `${t('permissions.actions.search', { defaultValue: '网络搜索' })}: ${parsedArgs.query || ''}`;
+          }
+        } catch (e) {
+           actionDescription = rawInput; // fallback
+        }
+
         return (
           <div
             key={request.requestId}
-            className="rounded-lg border border-amber-200 bg-amber-50 p-3 shadow-sm dark:border-amber-800 dark:bg-amber-900/20"
+            className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 shadow-sm backdrop-blur-md dark:bg-amber-500/5 transition-all animate-in slide-in-from-bottom-2"
           >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-amber-900 dark:text-amber-100">Permission required</div>
-                <div className="text-xs text-amber-800 dark:text-amber-200">
-                  Tool: <span className="font-mono">{request.toolName}</span>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+                  🛡️
+                </span>
+                <span className="font-semibold text-amber-900 dark:text-amber-100">
+                  {t('permissions.title', { defaultValue: '需要您的授权' })}
+                </span>
+                <span className="rounded-md bg-amber-500/15 px-2 py-0.5 font-mono text-xs font-semibold text-amber-700 dark:text-amber-300">
+                  {request.toolName}
+                </span>
+              </div>
+
+              {/* Human-readable parsed content */}
+              <div className="ml-8 rounded-xl border border-amber-500/20 bg-background/60 p-3 font-mono text-xs text-foreground shadow-sm dark:bg-background/40 max-h-40 overflow-auto">
+                <div className="whitespace-pre-wrap break-all leading-relaxed">
+                  {actionDescription}
                 </div>
               </div>
-              {permissionEntry && (
-                <div className="text-xs text-amber-700 dark:text-amber-300">
-                  Allow rule: <span className="font-mono">{permissionEntry}</span>
-                </div>
-              )}
-            </div>
 
-            {rawInput && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-amber-800 hover:text-amber-900 dark:text-amber-200 dark:hover:text-amber-100">
-                  View tool input
-                </summary>
-                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-amber-200/60 bg-white/80 p-2 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-gray-900/60 dark:text-amber-100">
-                  {rawInput}
-                </pre>
-              </details>
-            )}
+              {/* Actions */}
+              <div className="mt-2 ml-8 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePermissionDecision(request.requestId, { allow: true })}
+                  className="inline-flex min-w-[100px] items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500/30 active:scale-95"
+                >
+                  {t('permissions.allowOnceButton', { defaultValue: '允许单次' })}
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isClaudeRequest && permissionEntry && !alreadyAllowed) {
+                      handleGrantToolPermission({ entry: permissionEntry, toolName: request.toolName });
+                    }
+                    handlePermissionDecision(matchingRequestIds, { allow: true, rememberEntry: permissionEntry });
+                  }}
+                  className={`inline-flex min-w-[100px] items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-background/50 px-4 py-2 text-xs font-bold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/20 active:scale-95 ${
+                    canRemember
+                      ? 'text-amber-700 hover:bg-amber-500/10 dark:text-amber-300'
+                      : 'cursor-not-allowed opacity-50 dark:opacity-40 text-amber-900 dark:text-amber-100'
+                  }`}
+                  disabled={!canRemember}
+                >
+                  {isCodexApproval 
+                    ? t('permissions.allowSessionButton', { defaultValue: '本会话允许' }) 
+                    : alreadyAllowed 
+                      ? t('permissions.allowSavedButton', { defaultValue: '允许 (已存)' }) 
+                      : t('permissions.allowAlwaysButton', { defaultValue: '始终允许' })}
+                </button>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => handlePermissionDecision(request.requestId, { allow: true })}
-                className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-700"
-              >
-                Allow once
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (isClaudeRequest && permissionEntry && !alreadyAllowed) {
-                    handleGrantToolPermission({ entry: permissionEntry, toolName: request.toolName });
-                  }
-                  handlePermissionDecision(matchingRequestIds, { allow: true, rememberEntry: permissionEntry });
-                }}
-                className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  canRemember
-                    ? 'border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-100 dark:hover:bg-amber-900/30'
-                    : 'cursor-not-allowed border-gray-300 text-gray-400'
-                }`}
-                disabled={!canRemember}
-              >
-                {rememberLabel}
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePermissionDecision(request.requestId, { allow: false, message: 'User denied tool use' })}
-                className="inline-flex items-center gap-2 rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/30"
-              >
-                Deny
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handlePermissionDecision(request.requestId, { allow: false, message: 'User denied tool use' })}
+                  className="inline-flex min-w-[80px] items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-background/50 px-4 py-2 text-xs font-bold text-red-600 shadow-sm transition-all hover:bg-red-500/10 focus:outline-none focus:ring-2 focus:ring-red-500/30 active:scale-95 dark:text-red-400"
+                >
+                  {t('permissions.denyButton', { defaultValue: '拒绝' })}
+                </button>
+              </div>
             </div>
           </div>
         );

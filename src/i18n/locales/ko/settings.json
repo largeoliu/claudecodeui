@@ -409,7 +409,7 @@
       "technicalDetails": "기술 상세",
       "technicalInfo": {
         "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never. 프로젝트 디렉토리 내에서 모든 명령어 자동 실행.",
-        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. 채팅 프롬프트 앞에 /plan 이 붙어 Codex가 계획 모드로 동작하고 파일을 수정하지 않습니다.",
+        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. /plan 프리픽스 대신 Codex의 네이티브 collaborationMode로 계획 모드로 전환합니다.",
         "overrideNote": "채팅 인터페이스의 모드 버튼을 사용하여 세션별로 재정의할 수 있습니다."
       }
     },

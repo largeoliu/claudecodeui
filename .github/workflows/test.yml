@@ -1,0 +1,57 @@
+name: Test Suite
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run unit and integration tests with coverage
+        run: npm run test:coverage
+
+      - name: Build application
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Resolve Playwright Chromium path
+        id: chromium
+        run: echo "path=$(node -e \"const { chromium } = require('playwright'); process.stdout.write(chromium.executablePath())\")" >> "$GITHUB_OUTPUT"
+
+      - name: Run Playwright smoke test
+        env:
+          CI: 'true'
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE: ${{ steps.chromium.outputs.path }}
+        run: npm run test:e2e:smoke
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: |
+            coverage/
+            playwright-report/
+            test-results/

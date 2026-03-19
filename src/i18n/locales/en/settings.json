@@ -394,23 +394,42 @@
       "rmRf": "- Block recursive delete"
     },
     "codex": {
-      "permissionMode": "Permission Mode",
-      "description": "Controls whether Codex edits directly or stays in planning mode",
-      "modes": {
-        "acceptEdits": {
+      "interactionMode": "Interaction Mode",
+      "interactionDescription": "Controls whether Codex stays in editing mode or treats each prompt as a planning request.",
+      "interactionModes": {
+        "edit": {
           "title": "Edit Mode",
-          "description": "All commands run automatically within the workspace. Codex can edit files directly."
+          "description": "Use normal prompts for implementation work, edits, and command execution."
         },
         "plan": {
           "title": "Plan Mode",
-          "description": "Codex analyzes and drafts an implementation plan without modifying files or running commands from chat."
+          "description": "Keep Codex focused on analysis and planning before implementation work."
+        }
+      },
+      "approvalPolicy": "Approval Policy",
+      "approvalDescription": "Controls when Codex pauses and asks before it runs sensitive actions.",
+      "approvalModes": {
+        "untrusted": {
+          "title": "Untrusted",
+          "description": "Most actions stop for approval unless Codex considers them trusted."
+        },
+        "onRequest": {
+          "title": "On Request",
+          "description": "Codex decides when it needs approval for the current action."
+        },
+        "never": {
+          "title": "Never",
+          "description": "Codex does not stop for approval prompts inside the project sandbox."
         }
       },
       "technicalDetails": "Technical details",
       "technicalInfo": {
-        "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never. All commands auto-execute within project directory.",
-        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. Chat prompts are prefixed with /plan so Codex stays in planning mode and avoids file edits.",
-        "overrideNote": "You can override this per-session using the mode button in the chat interface."
+        "edit": "Uses normal prompts. It does not change approval behavior by itself.",
+        "plan": "Uses Codex's native plan collaboration mode with built-in planning instructions.",
+        "untrusted": "A stricter approval policy. More actions pause for review before Codex continues.",
+        "onRequest": "The default policy. Codex requests approval only when it decides the action needs it.",
+        "never": "Approval prompts are disabled for in-sandbox actions, but sandbox limits still apply.",
+        "overrideNote": "You can override both settings per session from the Codex chat header."
       }
     },
     "actions": {

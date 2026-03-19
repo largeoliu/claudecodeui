@@ -39,6 +39,7 @@ interface UseChatRealtimeHandlersArgs {
   setClaudeStatus: (status: { text: string; tokens: number; can_interrupt: boolean } | null) => void;
   setTokenBudget: (budget: Record<string, unknown> | null) => void;
   setIsSystemSessionChange: (isSystemSessionChange: boolean) => void;
+  pendingPermissionRequests: PendingPermissionRequest[];
   setPendingPermissionRequests: Dispatch<SetStateAction<PendingPermissionRequest[]>>;
   pendingViewSessionRef: MutableRefObject<PendingViewSession | null>;
   streamBufferRef: MutableRefObject<string>;
@@ -350,6 +351,7 @@ export function useChatRealtimeHandlers({
   setClaudeStatus,
   setTokenBudget,
   setIsSystemSessionChange,
+  pendingPermissionRequests,
   setPendingPermissionRequests,
   pendingViewSessionRef,
   streamBufferRef,
@@ -1600,10 +1602,20 @@ export function useChatRealtimeHandlers({
         if (latestMessage.isProcessing) {
           onSessionProcessing?.(statusSessionId);
           if (isCurrentSession) {
+            const pendingCodexRequest = provider === 'codex'
+              ? pendingPermissionRequests.find((request) => request.sessionId === statusSessionId)
+              : null;
             setIsLoading(true);
             setCanAbortSession(true);
             setClaudeStatus({
-              text: 'Processing',
+              text:
+                pendingCodexRequest?.requestKind === 'user-input'
+                  ? 'Waiting for input'
+                  : pendingCodexRequest?.requestKind === 'terminal-stdin'
+                    ? 'Waiting for terminal input'
+                    : pendingCodexRequest
+                      ? 'Waiting for permission'
+                      : 'Processing',
               tokens: 0,
               can_interrupt: true,
             });
@@ -1658,13 +1670,35 @@ export function useChatRealtimeHandlers({
       case 'pending-permissions-response': {
         // Server returned pending permissions for this session
         const permSessionId = latestMessage.sessionId;
+        const permProvider = latestMessage.provider;
         const isCurrentPermSession =
           permSessionId === currentSessionId || (selectedSession && permSessionId === selectedSession.id);
         if (permSessionId && !isCurrentPermSession) {
           break;
         }
-        const serverRequests = latestMessage.data || [];
+        if (permProvider && permProvider !== provider) {
+          break;
+        }
+        const serverRequests = Array.isArray(latestMessage.data) ? latestMessage.data : [];
         setPendingPermissionRequests(serverRequests);
+
+        const firstRequest = serverRequests[0] || null;
+        if (firstRequest?.provider === 'codex') {
+          setIsLoading(serverRequests.length > 0);
+          setCanAbortSession(serverRequests.length > 0);
+          setClaudeStatus(serverRequests.length > 0
+            ? {
+                text:
+                  firstRequest.requestKind === 'user-input'
+                    ? 'Waiting for input'
+                    : firstRequest.requestKind === 'terminal-stdin'
+                      ? 'Waiting for terminal input'
+                      : 'Waiting for permission',
+                tokens: 0,
+                can_interrupt: true,
+              }
+            : null);
+        }
         break;
       }
 
@@ -1690,11 +1724,16 @@ export function useChatRealtimeHandlers({
     setClaudeStatus,
     setTokenBudget,
     setIsSystemSessionChange,
+    pendingPermissionRequests,
     setPendingPermissionRequests,
     onSessionInactive,
     onSessionProcessing,
     onSessionNotProcessing,
     onReplaceTemporarySession,
     onNavigateToSession,
+    onWebSocketReconnect,
+    pendingViewSessionRef,
+    streamBufferRef,
+    streamTimerRef,
   ]);
 }

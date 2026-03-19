@@ -3,10 +3,30 @@ import path from 'path';
 import { notifyRunFailed, notifyRunStopped } from './services/notification-orchestrator.js';
 import {
   codexAppServer,
+  getCodexThreadOptions,
   isInteractiveThread,
-  mapPermissionModeToCodexOptions,
+  normalizeReasoningEffort,
   sendWriterMessage,
 } from './services/codex-app-server.js';
+
+function normalizeInteractionMode(mode) {
+  return mode === 'plan' ? 'plan' : 'edit';
+}
+
+function buildCollaborationMode(mode, model, reasoningEffort) {
+  if (typeof model !== 'string' || !model.trim()) {
+    return null;
+  }
+
+  return {
+    mode: mode === 'plan' ? 'plan' : 'default',
+    settings: {
+      model,
+      reasoning_effort: normalizeReasoningEffort(reasoningEffort),
+      developer_instructions: null,
+    },
+  };
+}
 
 async function handleImagesForCodex(command, images, cwd) {
   const tempImagePaths = [];
@@ -100,13 +120,15 @@ export async function queryCodex(command, options = {}, writer) {
     cwd,
     projectPath,
     model,
-    permissionMode = 'plan',
+    interactionMode = 'edit',
+    approvalPolicy = 'on-request',
     reasoningEffort,
     images,
   } = options;
 
   const workingDirectory = cwd || projectPath || process.cwd();
-  const { approvalPolicy, sandbox } = mapPermissionModeToCodexOptions(permissionMode);
+  const resolvedInteractionMode = normalizeInteractionMode(interactionMode);
+  const { approvalPolicy: resolvedApprovalPolicy, sandbox } = getCodexThreadOptions({ approvalPolicy });
 
   let threadId = sessionId || null;
   let completion = null;
@@ -118,15 +140,14 @@ export async function queryCodex(command, options = {}, writer) {
     if (sessionId) {
       await codexAppServer.resumeThread(sessionId, {
         cwd: workingDirectory,
-        approvalPolicy,
+        approvalPolicy: resolvedApprovalPolicy,
         sandbox,
-        model,
       });
       threadId = sessionId;
     } else {
       const started = await codexAppServer.startThread({
         cwd: workingDirectory,
-        approvalPolicy,
+        approvalPolicy: resolvedApprovalPolicy,
         sandbox,
         model,
       });
@@ -149,6 +170,27 @@ export async function queryCodex(command, options = {}, writer) {
       writer.setSessionId(threadId);
     }
 
+    const shouldSyncCollaborationMode = codexAppServer.shouldSyncCollaborationMode(
+      threadId,
+      resolvedInteractionMode,
+      { assumeDefaultIfUnknown: !sessionId },
+    );
+    const turnSettingSync = codexAppServer.shouldSyncTurnSettings(threadId, {
+      model,
+      reasoningEffort,
+    });
+    const collaborationMode = shouldSyncCollaborationMode
+      ? buildCollaborationMode(resolvedInteractionMode, model, reasoningEffort)
+      : null;
+
+    if (shouldSyncCollaborationMode && !collaborationMode) {
+      throw new Error('Missing Codex model required to synchronize collaboration mode');
+    }
+
+    if (!sessionId && !shouldSyncCollaborationMode) {
+      codexAppServer.setTrackedCollaborationMode(threadId, resolvedInteractionMode);
+    }
+
     const imageResult = await handleImagesForCodex(command, images, workingDirectory);
     const finalInput = imageResult.input;
     tempImagePaths = imageResult.tempImagePaths;
@@ -159,12 +201,24 @@ export async function queryCodex(command, options = {}, writer) {
       finalInput,
       {
         cwd: workingDirectory,
-        approvalPolicy,
-        model,
-        reasoningEffort,
+        approvalPolicy: resolvedApprovalPolicy,
+        model: turnSettingSync.model ? model : null,
+        reasoningEffort: turnSettingSync.reasoningEffort ? reasoningEffort : null,
+        collaborationMode,
       },
       writer,
     );
+
+    if (turnSettingSync.model || turnSettingSync.reasoningEffort) {
+      codexAppServer.updateTrackedTurnSettings(threadId, {
+        model: turnSettingSync.model ? model : undefined,
+        reasoningEffort: turnSettingSync.reasoningEffort ? reasoningEffort : undefined,
+      });
+    }
+
+    if (collaborationMode) {
+      codexAppServer.setTrackedCollaborationMode(threadId, resolvedInteractionMode);
+    }
 
     turn = startedTurn.turn;
     completion = startedTurn.completion;

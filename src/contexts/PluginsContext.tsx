@@ -32,6 +32,7 @@ type PluginsContextValue = {
 };
 
 const PluginsContext = createContext<PluginsContextValue | null>(null);
+const INITIAL_PLUGINS_LOAD_DELAY_MS = 1500;
 
 export function usePlugins() {
   const context = useContext(PluginsContext);
@@ -73,7 +74,13 @@ export function PluginsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void refreshPlugins();
+    const timer = window.setTimeout(() => {
+      void refreshPlugins();
+    }, INITIAL_PLUGINS_LOAD_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [refreshPlugins]);
 
   const installPlugin = useCallback(async (url: string) => {

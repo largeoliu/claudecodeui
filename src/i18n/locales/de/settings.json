@@ -388,7 +388,7 @@
       "technicalDetails": "Technische Details",
       "technicalInfo": {
         "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never. Alle Befehle werden automatisch innerhalb des Projektverzeichnisses ausgeführt.",
-        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. Chat-Prompts werden mit /plan gesendet, damit Codex im Planungsmodus bleibt und keine Dateien editiert.",
+        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. Verwendet den nativen Planungsmodus von Codex über collaborationMode statt /plan-Prompts.",
         "overrideNote": "Du kannst dies pro Sitzung über die Modusschaltfläche in der Chat-Oberfläche überschreiben."
       }
     },

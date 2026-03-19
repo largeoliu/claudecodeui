@@ -16,6 +16,8 @@ import { thinkingModes } from '../constants/thinkingModes';
 import { grantClaudeToolPermission } from '../utils/chatPermissions';
 import { safeLocalStorage } from '../utils/chatStorage';
 import type {
+  CodexApprovalPolicy,
+  CodexInteractionMode,
   ChatMessage,
   PendingPermissionRequest,
   PermissionMode,
@@ -36,6 +38,8 @@ interface UseChatComposerStateArgs {
   currentSessionId: string | null;
   provider: SessionProvider;
   permissionMode: PermissionMode | string;
+  codexInteractionMode: CodexInteractionMode;
+  codexApprovalPolicy: CodexApprovalPolicy;
   cyclePermissionMode: () => void;
   cursorModel: string;
   claudeModel: string;
@@ -109,6 +113,8 @@ export function useChatComposerState({
   currentSessionId,
   provider,
   permissionMode,
+  codexInteractionMode,
+  codexApprovalPolicy,
   cyclePermissionMode,
   cursorModel,
   claudeModel,
@@ -647,10 +653,9 @@ export function useChatComposerState({
           },
         });
       } else if (provider === 'codex') {
-        const codexCommand = permissionMode === 'plan' ? `/plan ${messageContent}` : messageContent;
         sendMessage({
           type: 'codex-command',
-          command: codexCommand,
+          command: messageContent,
           sessionId: effectiveSessionId,
           options: {
             cwd: resolvedProjectPath,
@@ -660,7 +665,8 @@ export function useChatComposerState({
             model: codexModel,
             reasoningEffort: codexReasoningEffort,
             sessionSummary,
-            permissionMode,
+            interactionMode: codexInteractionMode,
+            approvalPolicy: codexApprovalPolicy,
             images: uploadedImages,
           },
         });
@@ -720,6 +726,8 @@ export function useChatComposerState({
       attachedImages,
       claudeModel,
       codexModel,
+      codexApprovalPolicy,
+      codexInteractionMode,
       codexReasoningEffort,
       currentSessionId,
       cursorModel,
@@ -763,7 +771,7 @@ export function useChatComposerState({
       inputValueRef.current = next;
       return next;
     });
-  }, [selectedProject?.name]);
+  }, [selectedProject]);
 
   useEffect(() => {
     if (!selectedProject) {

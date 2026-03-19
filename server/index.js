@@ -47,7 +47,18 @@ import mime from 'mime-types';
 import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations } from './projects.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
-import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions, getCodexThreadTokenUsage } from './openai-codex.js';
+import {
+    queryCodex,
+    abortCodexSession,
+    getActiveCodexSessions,
+    getCodexThreadTokenUsage,
+    getPendingCodexRequests,
+    isCodexSessionActive,
+    reconnectCodexSessionWriter,
+    respondToCodexApproval,
+    respondToCodexCommandStdin,
+    respondToCodexUserInput,
+} from './openai-codex.js';
 import { spawnGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli.js';
 import sessionManager from './sessionManager.js';
 import gitRoutes from './routes/git.js';
@@ -495,7 +506,8 @@ app.post('/api/system/update', authenticateToken, async (req, res) => {
 
 app.get('/api/projects', authenticateToken, async (req, res) => {
     try {
-        const projects = await getProjects(broadcastProgress);
+        const lightweight = req.query.mode === 'light';
+        const projects = await getProjects(broadcastProgress, { lightweight });
         res.json(projects);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1529,6 +1541,21 @@ function handleChatConnection(ws, request) {
                         rememberEntry: data.rememberEntry
                     });
                 }
+            } else if (data.type === 'codex-approval-response') {
+                if (data.requestId) {
+                    await respondToCodexApproval(data.requestId, {
+                        allow: Boolean(data.allow),
+                        rememberEntry: data.rememberEntry
+                    });
+                }
+            } else if (data.type === 'codex-user-input-response') {
+                if (data.requestId) {
+                    await respondToCodexUserInput(data.requestId, data.answers || {});
+                }
+            } else if (data.type === 'codex-command-stdin-response') {
+                if (data.requestId) {
+                    await respondToCodexCommandStdin(data.requestId, data.text || '');
+                }
             } else if (data.type === 'cursor-abort') {
                 console.log('[DEBUG] Abort Cursor session:', data.sessionId);
                 const success = abortCursorSession(data.sessionId);
@@ -1548,6 +1575,9 @@ function handleChatConnection(ws, request) {
                     isActive = isCursorSessionActive(sessionId);
                 } else if (provider === 'codex') {
                     isActive = isCodexSessionActive(sessionId);
+                    if (isActive) {
+                        reconnectCodexSessionWriter(sessionId, writer);
+                    }
                 } else if (provider === 'gemini') {
                     isActive = isGeminiSessionActive(sessionId);
                 } else {
@@ -1569,14 +1599,21 @@ function handleChatConnection(ws, request) {
             } else if (data.type === 'get-pending-permissions') {
                 // Return pending permission requests for a session
                 const sessionId = data.sessionId;
-                if (sessionId && isClaudeSDKSessionActive(sessionId)) {
-                    const pending = getPendingApprovalsForSession(sessionId);
-                    writer.send({
-                        type: 'pending-permissions-response',
-                        sessionId,
-                        data: pending
-                    });
+                const provider = data.provider || 'claude';
+                let pending = [];
+
+                if (sessionId && provider === 'codex') {
+                    pending = getPendingCodexRequests(sessionId);
+                } else if (sessionId && isClaudeSDKSessionActive(sessionId)) {
+                    pending = getPendingApprovalsForSession(sessionId);
                 }
+
+                writer.send({
+                    type: 'pending-permissions-response',
+                    sessionId,
+                    provider,
+                    data: pending
+                });
             } else if (data.type === 'get-active-sessions') {
                 // Get all currently active sessions
                 const activeSessions = {

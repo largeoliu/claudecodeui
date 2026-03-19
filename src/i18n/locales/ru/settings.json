@@ -388,7 +388,7 @@
       "technicalDetails": "Технические детали",
       "technicalInfo": {
         "acceptEdits": "sandboxMode=workspace-write, approvalPolicy=never. Все команды автоматически выполняются в каталоге проекта.",
-        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. Сообщения из чата отправляются с префиксом /plan, поэтому Codex остаётся в режиме планирования и не редактирует файлы.",
+        "plan": "sandboxMode=workspace-write, approvalPolicy=untrusted. Использует нативный режим планирования Codex через collaborationMode без префикса /plan.",
         "overrideNote": "Вы можете переопределить это для каждого сеанса, используя кнопку режима в интерфейсе чата."
       }
     },

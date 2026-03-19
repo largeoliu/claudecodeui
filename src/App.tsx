@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Outlet, Route, Routes } from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, ProtectedRoute } from './components/auth';
@@ -10,28 +10,36 @@ import AppContent from './components/app/AppContent';
 import ErrorBoundary from './components/main-content/view/ErrorBoundary';
 import i18n from './i18n/config.js';
 
+function ProtectedAppLayout() {
+  return (
+    <ProtectedRoute>
+      <WebSocketProvider>
+        <PluginsProvider>
+          <TasksSettingsProvider>
+            <TaskMasterProvider>
+              <Outlet />
+            </TaskMasterProvider>
+          </TasksSettingsProvider>
+        </PluginsProvider>
+      </WebSocketProvider>
+    </ProtectedRoute>
+  );
+}
+
 export default function App() {
   return (
     <I18nextProvider i18n={i18n}>
       <ErrorBoundary>
         <ThemeProvider>
           <AuthProvider>
-            <WebSocketProvider>
-              <PluginsProvider>
-                <TasksSettingsProvider>
-                  <TaskMasterProvider>
-                    <ProtectedRoute>
-                      <Router basename={window.__ROUTER_BASENAME__ || ''}>
-                        <Routes>
-                          <Route path="/" element={<AppContent />} />
-                          <Route path="/session/:sessionId" element={<AppContent />} />
-                        </Routes>
-                      </Router>
-                    </ProtectedRoute>
-                  </TaskMasterProvider>
-                </TasksSettingsProvider>
-              </PluginsProvider>
-            </WebSocketProvider>
+            <Router basename={window.__ROUTER_BASENAME__ || ''}>
+              <Routes>
+                <Route element={<ProtectedAppLayout />}>
+                  <Route path="/" element={<AppContent />} />
+                  <Route path="/session/:sessionId" element={<AppContent />} />
+                </Route>
+              </Routes>
+            </Router>
           </AuthProvider>
         </ThemeProvider>
       </ErrorBoundary>

@@ -74,6 +74,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await checkOnboardingStatus();
   }, [checkOnboardingStatus]);
 
+  const applyOnboardingStatusResponse = useCallback(async (response: Response) => {
+    if (!response.ok) {
+      setHasCompletedOnboarding(true);
+      return;
+    }
+
+    const payload = await parseJsonSafely<OnboardingStatusPayload>(response);
+    setHasCompletedOnboarding(Boolean(payload?.hasCompletedOnboarding));
+  }, []);
+
   const checkAuthStatus = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -93,7 +103,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return;
       }
 
-      const userResponse = await api.auth.user();
+      const [userResponse, onboardingResponse] = await Promise.all([
+        api.auth.user(),
+        api.user.onboardingStatus(),
+      ]);
+
       if (!userResponse.ok) {
         clearSession();
         return;
@@ -106,14 +120,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       setUser(userPayload.user);
-      await checkOnboardingStatus();
+
+      try {
+        await applyOnboardingStatusResponse(onboardingResponse);
+      } catch (caughtError) {
+        console.error('Error checking onboarding status:', caughtError);
+        setHasCompletedOnboarding(true);
+      }
     } catch (caughtError) {
       console.error('[Auth] Auth status check failed:', caughtError);
       setError(AUTH_ERROR_MESSAGES.authStatusCheckFailed);
     } finally {
       setIsLoading(false);
     }
-  }, [checkOnboardingStatus, clearSession, token]);
+  }, [applyOnboardingStatusResponse, clearSession, token]);
 
   useEffect(() => {
     if (IS_PLATFORM) {

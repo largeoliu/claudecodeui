@@ -6,23 +6,23 @@ import type {
   ClaudePermissionSuggestion,
   PermissionGrantResult,
   Provider,
-  SubagentChildTool,
 } from '../../types/types';
 import { formatUsageLimitText } from '../../utils/chatFormatting';
 import { getClaudePermissionSuggestion } from '../../utils/chatPermissions';
 import type { Project } from '../../../../types/app';
-import { shouldHideToolResult } from '../../tools/configs/toolConfigs';
-import MessageCopyControl from './MessageCopyControl';
+import { ToolRenderer, shouldHideToolResult } from '../../tools';
 
-const LazyMarkdown = lazy(async () => {
-  const module = await import('./Markdown');
-  return { default: module.Markdown };
-});
+const Markdown = lazy(() =>
+  import('./Markdown').then((module) => ({ default: module.Markdown }))
+);
 
-const LazyToolRenderer = lazy(async () => {
-  const module = await import('../../tools/ToolRenderer');
-  return { default: module.ToolRenderer };
-});
+function DeferredMarkdown({ children, className }: { children: React.ReactNode; className: string }) {
+  return (
+    <Suspense fallback={<div className={className}>{children}</div>}>
+      <Markdown className={className}>{children}</Markdown>
+    </Suspense>
+  );
+}
 
 type DiffLine = {
   type: string;
@@ -33,6 +33,7 @@ type DiffLine = {
 type MessageComponentProps = {
   message: ChatMessage;
   prevMessage: ChatMessage | null;
+  nextMessage: ChatMessage | null;
   createDiff: (oldStr: string, newStr: string) => DiffLine[];
   onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
   onShowSettings?: () => void;
@@ -51,91 +52,19 @@ type InteractiveOption = {
 };
 
 type PermissionGrantState = 'idle' | 'granted' | 'error';
-const COPY_HIDDEN_TOOL_NAMES = new Set(['Bash', 'Edit', 'Write', 'ApplyPatch']);
 
-type DeferredMarkdownProps = {
-  children: React.ReactNode;
-  className?: string;
-};
-
-type DeferredToolRendererProps = {
-  toolName: string;
-  toolInput: unknown;
-  toolResult?: unknown;
-  toolId?: string;
-  mode: 'input' | 'result';
-  onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
-  createDiff: (oldStr: string, newStr: string) => DiffLine[];
-  selectedProject?: Project | null;
-  autoExpandTools?: boolean;
-  showRawParameters?: boolean;
-  rawToolInput?: string;
-  isSubagentContainer?: boolean;
-  subagentState?: {
-    childTools: SubagentChildTool[];
-    currentToolIndex: number;
-    isComplete: boolean;
-  };
-};
-
-function MarkdownFallback({ children, className }: DeferredMarkdownProps) {
-  return (
-    <div className={className}>
-      <div className="whitespace-pre-wrap break-words">{String(children ?? '')}</div>
-    </div>
-  );
-}
-
-function DeferredMarkdown({ children, className }: DeferredMarkdownProps) {
-  return (
-    <Suspense fallback={<MarkdownFallback className={className}>{children}</MarkdownFallback>}>
-      <LazyMarkdown className={className}>{children}</LazyMarkdown>
-    </Suspense>
-  );
-}
-
-function ToolRendererFallback({ mode }: Pick<DeferredToolRendererProps, 'mode'>) {
-  if (mode === 'result') {
-    return null;
-  }
-
-  return <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">Loading tool details...</div>;
-}
-
-function DeferredToolRenderer(props: DeferredToolRendererProps) {
-  return (
-    <Suspense fallback={<ToolRendererFallback mode={props.mode} />}>
-      <LazyToolRenderer {...props} />
-    </Suspense>
-  );
-}
-
-const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, onShowSettings, onGrantToolPermission, autoExpandTools, showRawParameters, showThinking, selectedProject, provider }: MessageComponentProps) => {
+const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, onFileOpen, onShowSettings, onGrantToolPermission, autoExpandTools, showRawParameters, showThinking, selectedProject, provider }: MessageComponentProps) => {
   const { t } = useTranslation('chat');
   const isGrouped = prevMessage && prevMessage.type === message.type &&
     ((prevMessage.type === 'assistant') ||
       (prevMessage.type === 'user') ||
       (prevMessage.type === 'tool') ||
       (prevMessage.type === 'error'));
+  const isLastInGroup = !nextMessage || nextMessage.type !== message.type;
   const messageRef = useRef<HTMLDivElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const permissionSuggestion = getClaudePermissionSuggestion(message, provider);
   const [permissionGrantState, setPermissionGrantState] = useState<PermissionGrantState>('idle');
-  const userCopyContent = String(message.content || '');
-  const formattedMessageContent = useMemo(
-    () => formatUsageLimitText(String(message.content || '')),
-    [message.content]
-  );
-  const assistantCopyContent = message.isToolUse
-    ? String(message.displayText || message.content || '')
-    : formattedMessageContent;
-  const isCommandOrFileEditToolResponse = Boolean(
-    message.isToolUse && COPY_HIDDEN_TOOL_NAMES.has(String(message.toolName || ''))
-  );
-  const shouldShowUserCopyControl = message.type === 'user' && userCopyContent.trim().length > 0;
-  const shouldShowAssistantCopyControl = message.type === 'assistant' &&
-    assistantCopyContent.trim().length > 0 &&
-    !isCommandOrFileEditToolResponse;
 
 
   useEffect(() => {
@@ -168,7 +97,9 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
     };
   }, [autoExpandTools, isExpanded, message.isToolUse]);
 
-  const formattedTime = useMemo(() => new Date(message.timestamp).toLocaleTimeString(), [message.timestamp]);
+  const formattedTime = useMemo(() => new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), [message.timestamp]);
+  const nextFormattedTime = useMemo(() => nextMessage ? new Date(nextMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null, [nextMessage]);
+  const shouldShowTimestamp = isLastInGroup && (!nextMessage || formattedTime !== nextFormattedTime);
   const shouldHideThinkingMessage = Boolean(message.isThinking && !showThinking);
 
   if (shouldHideThinkingMessage) {
@@ -183,8 +114,8 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
     >
       {message.type === 'user' ? (
         /* User message bubble on the right */
-        <div className="flex w-full items-end space-x-0 sm:w-auto sm:max-w-[85%] sm:space-x-3 md:max-w-md lg:max-w-lg xl:max-w-xl">
-          <div className="group flex-1 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-white shadow-sm sm:flex-initial sm:px-4">
+        <div className="flex w-full flex-col items-end sm:w-auto sm:max-w-[85%] md:max-w-2xl lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl">
+          <div className="group min-w-[50px] rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-white shadow-sm sm:px-4">
             <div className="whitespace-pre-wrap break-words text-sm">
               {message.content}
             </div>
@@ -201,16 +132,10 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                 ))}
               </div>
             )}
-            <div className="mt-1 flex items-center justify-end gap-1 text-xs text-blue-100">
-              {shouldShowUserCopyControl && (
-                <MessageCopyControl content={userCopyContent} messageType="user" />
-              )}
-              <span>{formattedTime}</span>
-            </div>
           </div>
-          {!isGrouped && (
-            <div className="hidden h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm text-white sm:flex">
-              U
+          {shouldShowTimestamp && (
+            <div className="mt-1 flex w-full justify-end text-[11px] text-gray-400 dark:text-gray-500">
+              <span className="mr-1">{formattedTime}</span>
             </div>
           )}
         </div>
@@ -225,26 +150,6 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
       ) : (
         /* Claude/Error/Tool messages on the left */
         <div className="w-full">
-          {!isGrouped && (
-            <div className="mb-2 flex items-center space-x-3">
-              {message.type === 'error' ? (
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-red-600 text-sm text-white">
-                  !
-                </div>
-              ) : message.type === 'tool' ? (
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-600 text-sm text-white dark:bg-gray-700">
-                  🔧
-                </div>
-              ) : (
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full p-1 text-sm text-white">
-                  <SessionProviderLogo provider={provider} className="h-full w-full" />
-                </div>
-              )}
-              <div className="text-sm font-medium text-gray-900 dark:text-white">
-                {message.type === 'error' ? t('messageTypes.error') : message.type === 'tool' ? t('messageTypes.tool') : (provider === 'cursor' ? t('messageTypes.cursor') : provider === 'codex' ? t('messageTypes.codex') : provider === 'gemini' ? t('messageTypes.gemini') : t('messageTypes.claude'))}
-              </div>
-            </div>
-          )}
 
           <div className="w-full">
 
@@ -259,7 +164,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                 </div>
 
                 {message.toolInput && (
-                  <DeferredToolRenderer
+                  <ToolRenderer
                     toolName={message.toolName || 'UnknownTool'}
                     toolInput={message.toolInput}
                     toolResult={message.toolResult}
@@ -291,9 +196,9 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                         <span className="text-xs font-medium text-red-700 dark:text-red-300">{t('messageTypes.error')}</span>
                       </div>
                       <div className="relative text-sm text-red-900 dark:text-red-100">
-                        <DeferredMarkdown className="prose prose-sm prose-red max-w-none dark:prose-invert">
-                          {String(message.toolResult.content || '')}
-                        </DeferredMarkdown>
+                         <DeferredMarkdown className="prose prose-sm prose-red max-w-none dark:prose-invert">
+                           {String(message.toolResult.content || '')}
+                         </DeferredMarkdown>
                         {permissionSuggestion && (
                           <div className="mt-4 border-t border-red-200/60 pt-3 dark:border-red-800/60">
                             <div className="flex flex-wrap items-center gap-2">
@@ -348,7 +253,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                   ) : (
                     // Non-error results - route through ToolRenderer (single source of truth)
                     <div id={`tool-result-${message.toolId}`} className="scroll-mt-4">
-                      <DeferredToolRenderer
+                      <ToolRenderer
                         toolName={message.toolName || 'UnknownTool'}
                         toolInput={message.toolInput}
                         toolResult={message.toolResult}
@@ -452,12 +357,12 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                     <svg className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-                    <span>{t('thinking.emoji')}</span>
+                    <span>{t('thinking.completed', { defaultValue: '思考过程' })}</span>
                   </summary>
                   <div className="mt-2 border-l-2 border-gray-300 pl-4 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
-                    <DeferredMarkdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
+                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
                       {message.content}
-                    </DeferredMarkdown>
+                    </Markdown>
                   </div>
                 </details>
               </div>
@@ -467,7 +372,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                 {showThinking && message.reasoning && (
                   <details className="mb-3">
                     <summary className="cursor-pointer font-medium text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">
-                      {t('thinking.emoji')}
+                      {t('thinking.completed', { defaultValue: '思考过程' })}
                     </summary>
                     <div className="mt-2 border-l-2 border-gray-300 pl-4 text-sm italic text-gray-600 dark:border-gray-600 dark:text-gray-400">
                       <div className="whitespace-pre-wrap">
@@ -478,7 +383,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                 )}
 
                 {(() => {
-                  const content = formattedMessageContent;
+                  const content = formatUsageLimitText(String(message.content || ''));
 
                   // Detect if content is pure JSON (starts with { or [)
                   const trimmedContent = content.trim();
@@ -512,9 +417,9 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
 
                   // Normal rendering for non-JSON content
                   return message.type === 'assistant' ? (
-                    <DeferredMarkdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
+                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
                       {content}
-                    </DeferredMarkdown>
+                    </Markdown>
                   ) : (
                     <div className="whitespace-pre-wrap">
                       {content}
@@ -524,12 +429,9 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
               </div>
             )}
 
-            {(shouldShowAssistantCopyControl || !isGrouped) && (
+            {shouldShowTimestamp && (
               <div className="mt-1 flex w-full items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
-                {shouldShowAssistantCopyControl && (
-                  <MessageCopyControl content={assistantCopyContent} messageType="assistant" />
-                )}
-                {!isGrouped && <span>{formattedTime}</span>}
+                <span>{formattedTime}</span>
               </div>
             )}
           </div>

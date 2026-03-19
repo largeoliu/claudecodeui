@@ -10,11 +10,12 @@ import {
 import type {
   AgentProvider,
   AuthStatus,
+  CodexApprovalPolicy,
+  CodexInteractionMode,
   ClaudeMcpFormState,
   ClaudePermissionsState,
   CodeEditorSettingsState,
   CodexMcpFormState,
-  CodexPermissionMode,
   CursorPermissionsState,
   GeminiPermissionMode,
   McpServer,
@@ -94,7 +95,8 @@ type CursorSettingsStorage = {
 };
 
 type CodexSettingsStorage = {
-  permissionMode?: string;
+  interactionMode?: string;
+  approvalPolicy?: string;
   reasoningEffort?: string;
   lastUpdated?: string;
 };
@@ -133,12 +135,20 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
   }
 };
 
-const toCodexPermissionMode = (value: unknown): CodexPermissionMode => {
-  if (value === 'acceptEdits' || value === 'plan') {
+const toCodexInteractionMode = (value: unknown): CodexInteractionMode => {
+  if (value === 'edit' || value === 'plan') {
     return value;
   }
 
-  return 'plan';
+  return 'edit';
+};
+
+const toCodexApprovalPolicy = (value: unknown): CodexApprovalPolicy => {
+  if (value === 'untrusted' || value === 'on-request' || value === 'never') {
+    return value;
+  }
+
+  return 'on-request';
 };
 
 const readCodeEditorSettings = (): CodeEditorSettingsState => ({
@@ -206,7 +216,7 @@ const createDefaultNotificationPreferences = (): NotificationPreferencesState =>
   },
 });
 
-export function useSettingsController({ isOpen, initialTab, projects, onClose }: UseSettingsControllerArgs) {
+export function useSettingsController({ isOpen, initialTab, projects, onClose: _onClose }: UseSettingsControllerArgs) {
   const { isDarkMode, toggleDarkMode } = useTheme() as ThemeContextValue;
   const closeTimerRef = useRef<number | null>(null);
 
@@ -227,7 +237,8 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferencesState>(() => (
     createDefaultNotificationPreferences()
   ));
-  const [codexPermissionMode, setCodexPermissionMode] = useState<CodexPermissionMode>('plan');
+  const [codexInteractionMode, setCodexInteractionMode] = useState<CodexInteractionMode>('edit');
+  const [codexApprovalPolicy, setCodexApprovalPolicy] = useState<CodexApprovalPolicy>('on-request');
   const [geminiPermissionMode, setGeminiPermissionMode] = useState<GeminiPermissionMode>('default');
 
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
@@ -685,7 +696,8 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
         localStorage.getItem('codex-settings'),
         {},
       );
-      setCodexPermissionMode(toCodexPermissionMode(savedCodexSettings.permissionMode));
+      setCodexInteractionMode(toCodexInteractionMode(savedCodexSettings.interactionMode));
+      setCodexApprovalPolicy(toCodexApprovalPolicy(savedCodexSettings.approvalPolicy));
 
       const savedGeminiSettings = parseJson<{ permissionMode?: GeminiPermissionMode }>(
         localStorage.getItem('gemini-settings'),
@@ -719,7 +731,8 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
       setClaudePermissions(createEmptyClaudePermissions());
       setCursorPermissions(createEmptyCursorPermissions());
       setNotificationPreferences(createDefaultNotificationPreferences());
-      setCodexPermissionMode('plan');
+      setCodexInteractionMode('edit');
+      setCodexApprovalPolicy('on-request');
       setProjectSortOrder('name');
     }
   }, [fetchCodexMcpServers, fetchCursorMcpServers, fetchMcpServers]);
@@ -766,7 +779,8 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
 
       localStorage.setItem('codex-settings', JSON.stringify({
         ...existingCodexSettings,
-        permissionMode: codexPermissionMode,
+        interactionMode: codexInteractionMode,
+        approvalPolicy: codexApprovalPolicy,
         lastUpdated: now,
       }));
 
@@ -792,7 +806,8 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
     claudePermissions.allowedTools,
     claudePermissions.disallowedTools,
     claudePermissions.skipPermissions,
-    codexPermissionMode,
+    codexApprovalPolicy,
+    codexInteractionMode,
     cursorPermissions.allowedCommands,
     cursorPermissions.disallowedCommands,
     cursorPermissions.skipPermissions,
@@ -921,8 +936,10 @@ export function useSettingsController({ isOpen, initialTab, projects, onClose }:
     setCursorPermissions,
     notificationPreferences,
     setNotificationPreferences,
-    codexPermissionMode,
-    setCodexPermissionMode,
+    codexInteractionMode,
+    setCodexInteractionMode,
+    codexApprovalPolicy,
+    setCodexApprovalPolicy,
     mcpServers,
     cursorMcpServers,
     codexMcpServers,

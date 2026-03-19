@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { IS_PLATFORM } from '../../../constants/config';
-import { api } from '../../../utils/api';
+import { api, hashPassword } from '../../../utils/api';
 import { AUTH_ERROR_MESSAGES, AUTH_TOKEN_STORAGE_KEY } from '../constants';
 import type {
   AuthContextValue,
@@ -132,7 +132,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     async (username, password) => {
       try {
         setError(null);
-        const response = await api.auth.login(username, password);
+        const hashedPassword = await hashPassword(password);
+        const response = await api.auth.login(username, hashedPassword);
         const payload = await parseJsonSafely<AuthSessionPayload>(response);
 
         if (!response.ok || !payload?.token || !payload.user) {
@@ -158,7 +159,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     async (username, password) => {
       try {
         setError(null);
-        const response = await api.auth.register(username, password);
+        const hashedPassword = await hashPassword(password);
+        const response = await api.auth.register(username, hashedPassword);
         const payload = await parseJsonSafely<AuthSessionPayload>(response);
 
         if (!response.ok || !payload?.token || !payload.user) {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { authenticatedFetch } from '../../../utils/api';
 
 type Props = {
@@ -9,6 +10,10 @@ type Props = {
 
 // Module-level cache so repeated renders don't re-fetch
 const svgCache = new Map<string, string>();
+
+const sanitizeSvg = (svg: string): string => {
+  return DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true } });
+};
 
 export default function PluginIcon({ pluginName, iconFile, className }: Props) {
   const url = iconFile
@@ -25,8 +30,9 @@ export default function PluginIcon({ pluginName, iconFile, className }: Props) {
       })
       .then((text) => {
         if (text && text.trimStart().startsWith('<svg')) {
-          svgCache.set(url, text);
-          setSvg(text);
+          const sanitized = sanitizeSvg(text);
+          svgCache.set(url, sanitized);
+          setSvg(sanitized);
         }
       })
       .catch(() => {});
@@ -37,7 +43,6 @@ export default function PluginIcon({ pluginName, iconFile, className }: Props) {
   return (
     <span
       className={className}
-      // SVG is fetched from the user's own installed plugin — same trust level as the plugin code itself
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

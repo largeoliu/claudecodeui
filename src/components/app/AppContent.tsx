@@ -3,17 +3,28 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Sidebar from '../sidebar/view/Sidebar';
 import MainContent from '../main-content/view/MainContent';
-import { useWebSocket } from '../../contexts/WebSocketContext';
+import { useWebSocket, useWebSocketMessageEffect } from '../../contexts/WebSocketContext';
 import { useDeviceSettings } from '../../hooks/useDeviceSettings';
 import { useSessionProtection } from '../../hooks/useSessionProtection';
 import { useProjectsState } from '../../hooks/useProjectsState';
+
+type ActiveSessionsMessage = {
+  type?: 'active-sessions';
+  sessions?: {
+    claude?: string[];
+    cursor?: string[];
+    codex?: string[];
+    gemini?: string[];
+    [key: string]: unknown;
+  };
+};
 
 export default function AppContent() {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId?: string }>();
   const { t } = useTranslation('common');
   const { isMobile } = useDeviceSettings({ trackPWA: false });
-  const { ws, sendMessage, latestMessage, isConnected } = useWebSocket();
+  const { ws, sendMessage, isConnected } = useWebSocket();
   const wasConnectedRef = useRef(false);
 
   const {
@@ -45,7 +56,6 @@ export default function AppContent() {
   } = useProjectsState({
     sessionId,
     navigate,
-    latestMessage,
     isMobile,
     activeSessions,
   });
@@ -116,34 +126,24 @@ export default function AppContent() {
     sendMessage({ type: 'get-active-sessions' });
   }, [isConnected, sendMessage]);
 
-  useEffect(() => {
-    if (!isConnected || !selectedSession?.id) {
-      return;
-    }
+  useWebSocketMessageEffect<ActiveSessionsMessage>(
+    (message) => {
+      const activeSessionsData = message.sessions;
+      if (!activeSessionsData) {
+        return;
+      }
 
-    sendMessage({
-      type: 'get-pending-permissions',
-      sessionId: selectedSession.id
-    });
-  }, [isConnected, selectedSession?.id, sendMessage]);
+      const allActiveIds = [
+        ...(Array.isArray(activeSessionsData.claude) ? activeSessionsData.claude : []),
+        ...(Array.isArray(activeSessionsData.cursor) ? activeSessionsData.cursor : []),
+        ...(Array.isArray(activeSessionsData.codex) ? activeSessionsData.codex : []),
+        ...(Array.isArray(activeSessionsData.gemini) ? activeSessionsData.gemini : []),
+      ];
 
-  // Handle active-sessions response from server
-  useEffect(() => {
-    if (!latestMessage) return;
-    if (latestMessage.type !== 'active-sessions') return;
-
-    const activeSessionsData = latestMessage.sessions;
-    if (!activeSessionsData) return;
-
-    const allActiveIds = [
-      ...(Array.isArray(activeSessionsData.claude) ? activeSessionsData.claude : []),
-      ...(Array.isArray(activeSessionsData.cursor) ? activeSessionsData.cursor : []),
-      ...(Array.isArray(activeSessionsData.codex) ? activeSessionsData.codex : []),
-      ...(Array.isArray(activeSessionsData.gemini) ? activeSessionsData.gemini : []),
-    ];
-
-    syncSessionsFromServer(allActiveIds);
-  }, [latestMessage, syncSessionsFromServer]);
+      syncSessionsFromServer(allActiveIds);
+    },
+    (message) => message.type === 'active-sessions',
+  );
 
   return (
     <div className="fixed inset-0 flex bg-background">
@@ -188,7 +188,6 @@ export default function AppContent() {
           setActiveTab={setActiveTab}
           ws={ws}
           sendMessage={sendMessage}
-          latestMessage={latestMessage}
           isMobile={isMobile}
           onMenuClick={() => setSidebarOpen(true)}
           isLoading={isLoadingProjects}

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
+import { useLatestWebSocketMessage } from '../../../contexts/WebSocketContext';
 import { QuickSettingsPanel } from '../../quick-settings-panel';
-import type { ChatInterfaceProps, Provider  } from '../types/types';
+import type { ChatInterfaceProps, Provider } from '../types/types';
 import { useChatProviderState } from '../hooks/useChatProviderState';
 import { useChatSessionState } from '../hooks/useChatSessionState';
 import { useChatRealtimeHandlers } from '../hooks/useChatRealtimeHandlers';
@@ -10,6 +11,45 @@ import { useChatComposerState } from '../hooks/useChatComposerState';
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
 
+const CHAT_REALTIME_MESSAGE_TYPES = new Set([
+  'session-created',
+  'websocket-reconnected',
+  'token-budget',
+  'claude-response',
+  'claude-output',
+  'claude-interactive-prompt',
+  'claude-permission-request',
+  'claude-permission-cancelled',
+  'claude-error',
+  'cursor-system',
+  'cursor-user',
+  'cursor-tool-use',
+  'cursor-error',
+  'cursor-result',
+  'cursor-output',
+  'claude-complete',
+  'codex-response',
+  'codex-approval-request',
+  'codex-user-input-request',
+  'codex-command-stdin-request',
+  'codex-request-cancelled',
+  'codex-complete',
+  'codex-error',
+  'gemini-response',
+  'gemini-error',
+  'gemini-tool-use',
+  'gemini-tool-result',
+  'session-aborted',
+  'session-status',
+  'claude-status',
+  'pending-permissions-response',
+  'error',
+]);
+
+type ChatRealtimeMessage = {
+  type?: string;
+  [key: string]: unknown;
+};
 
 type PendingViewSession = {
   sessionId: string | null;
@@ -21,7 +61,6 @@ function ChatInterface({
   selectedSession,
   ws,
   sendMessage,
-  latestMessage,
   onFileOpen,
   onInputFocusChange,
   onSessionActive,
@@ -42,6 +81,9 @@ function ChatInterface({
 }: ChatInterfaceProps) {
   const { tasksEnabled, isTaskMasterInstalled } = useTasksSettings();
   const { t } = useTranslation('chat');
+  const latestMessage = useLatestWebSocketMessage<ChatRealtimeMessage>((message) =>
+    CHAT_REALTIME_MESSAGE_TYPES.has(String(message.type || '')),
+  );
 
   const streamBufferRef = useRef('');
   const streamTimerRef = useRef<number | null>(null);
@@ -104,6 +146,7 @@ function ChatInterface({
     isLoadingAllMessages,
     loadAllJustFinished,
     showLoadAllOverlay,
+    isSearchScrollActive,
     claudeStatus,
     setClaudeStatus,
     createDiff,
@@ -245,6 +288,17 @@ function ChatInterface({
   });
 
   useEffect(() => {
+    if (!ws || !selectedSession?.id) {
+      return;
+    }
+
+    sendMessage({
+      type: 'get-pending-permissions',
+      sessionId: selectedSession.id,
+    });
+  }, [selectedSession?.id, sendMessage, ws]);
+
+  useEffect(() => {
     if (!isLoading || !canAbortSession) {
       return;
     }
@@ -332,6 +386,7 @@ function ChatInterface({
           isLoadingAllMessages={isLoadingAllMessages}
           loadAllJustFinished={loadAllJustFinished}
           showLoadAllOverlay={showLoadAllOverlay}
+          isSearchScrollActive={isSearchScrollActive}
           createDiff={createDiff}
           onFileOpen={onFileOpen}
           onShowSettings={onShowSettings}

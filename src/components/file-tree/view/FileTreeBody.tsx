@@ -10,6 +10,7 @@ type FileTreeBodyProps = {
   filteredFiles: FileTreeNode[];
   searchQuery: string;
   viewMode: FileTreeViewMode;
+  scrollContainerRef: RefObject<HTMLDivElement>;
   expandedDirs: Set<string>;
   onItemClick: (item: FileTreeNode) => void;
   renderFileIcon: (filename: string) => ReactNode;
@@ -37,6 +38,7 @@ export default function FileTreeBody({
   filteredFiles,
   searchQuery,
   viewMode,
+  scrollContainerRef,
   expandedDirs,
   onItemClick,
   renderFileIcon,
@@ -77,6 +79,7 @@ export default function FileTreeBody({
         <FileTreeList
           items={filteredFiles}
           viewMode={viewMode}
+          scrollContainerRef={scrollContainerRef}
           expandedDirs={expandedDirs}
           onItemClick={onItemClick}
           renderFileIcon={renderFileIcon}

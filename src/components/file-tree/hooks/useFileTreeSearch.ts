@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { collectExpandedDirectoryPaths, filterFileTree } from '../utils/fileTreeUtils';
 import type { FileTreeNode } from '../types/types';
 
@@ -18,21 +18,25 @@ export function useFileTreeSearch({
   expandDirectories,
 }: UseFileTreeSearchArgs): UseFileTreeSearchResult {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredFiles, setFilteredFiles] = useState<FileTreeNode[]>(files);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
+
+  const filteredFiles = useMemo(() => {
+    if (!normalizedQuery) {
+      return files;
+    }
+
+    return filterFileTree(files, normalizedQuery);
+  }, [files, normalizedQuery]);
 
   useEffect(() => {
-    const query = searchQuery.trim().toLowerCase();
-
-    if (!query) {
-      setFilteredFiles(files);
+    if (!normalizedQuery) {
       return;
     }
 
-    const filtered = filterFileTree(files, query);
-    setFilteredFiles(filtered);
     // Keep search results visible by opening every matching ancestor directory once per query update.
-    expandDirectories(collectExpandedDirectoryPaths(filtered));
-  }, [files, searchQuery, expandDirectories]);
+    expandDirectories(collectExpandedDirectoryPaths(filteredFiles));
+  }, [expandDirectories, filteredFiles, normalizedQuery]);
 
   return {
     searchQuery,

@@ -80,6 +80,7 @@ export function useChatSessionState({
   const [isLoadingAllMessages, setIsLoadingAllMessages] = useState(false);
   const [loadAllJustFinished, setLoadAllJustFinished] = useState(false);
   const [showLoadAllOverlay, setShowLoadAllOverlay] = useState(false);
+  const [isSearchScrollActive, setIsSearchScrollActive] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [searchTarget, setSearchTarget] = useState<{ timestamp?: string; uuid?: string; snippet?: string } | null>(null);
@@ -517,6 +518,7 @@ export function useChatSessionState({
     const targetTimestamp = session?.__searchTargetTimestamp;
     if (typeof targetSnippet === 'string' && targetSnippet) {
       searchScrollActiveRef.current = true;
+      setIsSearchScrollActive(true);
       setSearchTarget({
         snippet: targetSnippet,
         timestamp: typeof targetTimestamp === 'string' ? targetTimestamp : undefined,
@@ -643,10 +645,12 @@ export function useChatSessionState({
           targetElement.classList.add('search-highlight-flash');
           setTimeout(() => targetElement?.classList.remove('search-highlight-flash'), 4000);
           searchScrollActiveRef.current = false;
+          setIsSearchScrollActive(false);
         } else if (retriesLeft > 0) {
           setTimeout(() => findAndScroll(retriesLeft - 1), 200);
         } else {
           searchScrollActiveRef.current = false;
+          setIsSearchScrollActive(false);
         }
       };
 
@@ -891,6 +895,7 @@ export function useChatSessionState({
     isLoadingAllMessages,
     loadAllJustFinished,
     showLoadAllOverlay,
+    isSearchScrollActive,
     claudeStatus,
     setClaudeStatus,
     createDiff,

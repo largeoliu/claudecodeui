@@ -14,6 +14,7 @@ module.exports = {
         HOST: '127.0.0.1',
         SERVER_PORT: '3001',
         NODE_ENV: 'production',
+        DATABASE_PATH: '/root/.cloudcli/auth.db',
       },
     },
   ],

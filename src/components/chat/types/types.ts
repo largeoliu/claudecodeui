@@ -73,11 +73,13 @@ export interface PermissionGrantResult {
 
 export interface PendingPermissionRequest {
   requestId: string;
+  provider?: string;
+  requestKind?: 'approval' | 'user-input' | 'terminal-stdin' | string;
   toolName: string;
   input?: unknown;
   context?: unknown;
   sessionId?: string | null;
-  receivedAt?: Date;
+  receivedAt?: Date | string;
 }
 
 export interface QuestionOption {
@@ -86,10 +88,13 @@ export interface QuestionOption {
 }
 
 export interface Question {
+  id?: string;
   question: string;
   header?: string;
   options: QuestionOption[];
   multiSelect?: boolean;
+  allowOther?: boolean;
+  isSecret?: boolean;
 }
 
 export interface ChatInterfaceProps {

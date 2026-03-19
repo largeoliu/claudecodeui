@@ -335,7 +335,7 @@ export function useChatSessionState({
   useEffect(() => {
     const loadMessages = async () => {
       if (selectedSession && selectedProject) {
-        const provider = (localStorage.getItem('selected-provider') as Provider) || 'claude';
+        const provider = selectedSession.__provider || (localStorage.getItem('selected-provider') as Provider) || 'claude';
         isLoadingSessionRef.current = true;
 
         const sessionChanged = currentSessionId !== null && currentSessionId !== selectedSession.id;
@@ -469,7 +469,7 @@ export function useChatSessionState({
 
     const reloadExternalMessages = async () => {
       try {
-        const provider = (localStorage.getItem('selected-provider') as Provider) || 'claude';
+        const provider = selectedSession.__provider || (localStorage.getItem('selected-provider') as Provider) || 'claude';
 
         if (provider === 'cursor') {
           const projectPath = selectedProject.fullPath || selectedProject.path || '';

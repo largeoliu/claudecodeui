@@ -82,7 +82,13 @@ router.get('/sessions/:sessionId/messages', async (req, res) => {
     res.json({ success: true, ...result });
   } catch (error) {
     console.error('Error fetching Codex session messages:', error);
-    res.status(500).json({ success: false, error: error.message });
+    const statusCode = error?.statusCode || 500;
+    res.status(statusCode).json({
+      success: false,
+      error: error.message,
+      unsupported: Boolean(error?.unsupported),
+      code: error?.code || null,
+    });
   }
 });
 
@@ -94,7 +100,13 @@ router.delete('/sessions/:sessionId', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error(`Error deleting Codex session ${req.params.sessionId}:`, error);
-    res.status(500).json({ success: false, error: error.message });
+    const statusCode = error?.statusCode || 500;
+    res.status(statusCode).json({
+      success: false,
+      error: error.message,
+      unsupported: Boolean(error?.unsupported),
+      code: error?.code || null,
+    });
   }
 });
 

@@ -491,6 +491,7 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
         isToolUse: true,
         toolName: message.toolName,
         toolInput: normalizeToolInput(message.toolInput),
+        toolId: message.toolId || message.toolCallId,
         toolCallId: message.toolCallId,
       });
       return;
@@ -502,11 +503,18 @@ export const convertSessionMessages = (rawMessages: any[]): ChatMessage[] => {
         if (!convertedMessage.isToolUse || convertedMessage.toolResult) {
           continue;
         }
-        if (!message.toolCallId || convertedMessage.toolCallId === message.toolCallId) {
+        if (
+          !message.toolCallId
+          || convertedMessage.toolCallId === message.toolCallId
+          || convertedMessage.toolId === message.toolCallId
+        ) {
           convertedMessage.toolResult = {
             content: message.output || '',
             isError: false,
           };
+          if (!convertedMessage.toolId && message.toolCallId) {
+            convertedMessage.toolId = message.toolCallId;
+          }
           break;
         }
       }

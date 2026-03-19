@@ -92,6 +92,251 @@ const finalizeStreamingMessage = (setChatMessages: Dispatch<SetStateAction<ChatM
   });
 };
 
+const parseMaybeJson = (value: unknown) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+const normalizeCodexToolName = (value: unknown) => {
+  if (value === 'shell_command') {
+    return 'Bash';
+  }
+
+  return typeof value === 'string' && value ? value : 'UnknownTool';
+};
+
+const normalizeCodexToolInput = (toolName: string, value: unknown) => {
+  const parsedValue = parseMaybeJson(value);
+
+  if (toolName === 'Bash' && typeof parsedValue === 'string') {
+    return { command: parsedValue };
+  }
+
+  return parsedValue;
+};
+
+const toCodexToolResult = (value: unknown, isError = false) => ({
+  content:
+    typeof value === 'string'
+      ? value
+      : value === undefined || value === null
+        ? ''
+        : JSON.stringify(value, null, 2),
+  isError,
+  timestamp: new Date(),
+});
+
+const upsertCodexToolMessage = ({
+  setChatMessages,
+  toolId,
+  toolName,
+  toolInput,
+  toolResult,
+}: {
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  toolId: string;
+  toolName?: string;
+  toolInput?: unknown;
+  toolResult?: { content?: unknown; isError?: boolean; timestamp?: Date | string | number } | null;
+}) => {
+  setChatMessages((previous) => {
+    const existingIndex = previous.findIndex((message) => message.isToolUse && message.toolId === toolId);
+
+    if (existingIndex === -1) {
+      return [
+        ...previous,
+        {
+          type: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          isToolUse: true,
+          toolName: toolName || 'UnknownTool',
+          toolInput: toolInput ?? '',
+          toolId,
+          toolResult: toolResult ?? null,
+        },
+      ];
+    }
+
+    const next = [...previous];
+    const existingMessage = next[existingIndex];
+
+    next[existingIndex] = {
+      ...existingMessage,
+      toolName: toolName || existingMessage.toolName,
+      toolInput: toolInput !== undefined ? toolInput : existingMessage.toolInput,
+      toolResult: toolResult !== undefined ? toolResult : existingMessage.toolResult,
+    };
+
+    return next;
+  });
+};
+
+const upsertCodexTextMessage = ({
+  setChatMessages,
+  itemId,
+  content,
+  isThinking = false,
+  isStreaming = false,
+}: {
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  itemId: string;
+  content: string;
+  isThinking?: boolean;
+  isStreaming?: boolean;
+}) => {
+  setChatMessages((previous) => {
+    const existingIndex = previous.findIndex(
+      (message) =>
+        !message.isToolUse
+        && message.toolId === itemId
+        && Boolean(message.isThinking) === isThinking,
+    );
+
+    if (existingIndex === -1) {
+      return [
+        ...previous,
+        {
+          type: 'assistant',
+          content,
+          timestamp: new Date(),
+          isThinking,
+          isStreaming,
+          toolId: itemId,
+        },
+      ];
+    }
+
+    const next = [...previous];
+    next[existingIndex] = {
+      ...next[existingIndex],
+      content,
+      isThinking,
+      isStreaming,
+      timestamp: new Date(),
+    };
+    return next;
+  });
+};
+
+const appendCodexTextDelta = ({
+  setChatMessages,
+  itemId,
+  delta,
+  isThinking = false,
+}: {
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  itemId: string;
+  delta: string;
+  isThinking?: boolean;
+}) => {
+  if (!delta) {
+    return;
+  }
+
+  setChatMessages((previous) => {
+    const existingIndex = previous.findIndex(
+      (message) =>
+        !message.isToolUse
+        && message.toolId === itemId
+        && Boolean(message.isThinking) === isThinking,
+    );
+
+    if (existingIndex === -1) {
+      return [
+        ...previous,
+        {
+          type: 'assistant',
+          content: delta,
+          timestamp: new Date(),
+          isThinking,
+          isStreaming: true,
+          toolId: itemId,
+        },
+      ];
+    }
+
+    const next = [...previous];
+    const existingMessage = next[existingIndex];
+    next[existingIndex] = {
+      ...existingMessage,
+      content: `${existingMessage.content || ''}${delta}`,
+      isThinking,
+      isStreaming: true,
+      timestamp: new Date(),
+    };
+    return next;
+  });
+};
+
+const appendCodexToolResultChunk = ({
+  setChatMessages,
+  toolId,
+  toolName,
+  toolInput,
+  chunk,
+}: {
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  toolId: string;
+  toolName?: string;
+  toolInput?: unknown;
+  chunk: string;
+}) => {
+  if (!chunk) {
+    return;
+  }
+
+  setChatMessages((previous) => {
+    const existingIndex = previous.findIndex((message) => message.isToolUse && message.toolId === toolId);
+
+    if (existingIndex === -1) {
+      return [
+        ...previous,
+        {
+          type: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          isToolUse: true,
+          toolName: toolName || 'UnknownTool',
+          toolInput: toolInput ?? '',
+          toolId,
+          toolResult: {
+            content: chunk,
+            isError: false,
+            timestamp: new Date(),
+          },
+        },
+      ];
+    }
+
+    const next = [...previous];
+    const existingMessage = next[existingIndex];
+    const previousContent =
+      typeof existingMessage.toolResult?.content === 'string'
+        ? existingMessage.toolResult.content
+        : '';
+    next[existingIndex] = {
+      ...existingMessage,
+      toolName: toolName || existingMessage.toolName,
+      toolInput: toolInput !== undefined ? toolInput : existingMessage.toolInput,
+      toolResult: {
+        ...(existingMessage.toolResult || {}),
+        content: `${previousContent}${chunk}`,
+        isError: false,
+        timestamp: new Date(),
+      },
+    };
+    return next;
+  });
+};
+
 export function useChatRealtimeHandlers({
   latestMessage,
   provider,
@@ -800,92 +1045,285 @@ export function useChatRealtimeHandlers({
 
         if (codexData.type === 'item') {
           switch (codexData.itemType) {
-            case 'agent_message':
-              if (codexData.message?.content?.trim()) {
-                const content = decodeHtmlEntities(codexData.message.content);
-                setChatMessages((previous) => [
-                  ...previous,
-                  {
-                    type: 'assistant',
-                    content,
-                    timestamp: new Date(),
-                  },
-                ]);
+            case 'agent_message': {
+              const content = typeof codexData.message?.content === 'string'
+                ? decodeHtmlEntities(codexData.message.content)
+                : '';
+
+              if (content.trim() && codexData.itemId) {
+                upsertCodexTextMessage({
+                  setChatMessages,
+                  itemId: codexData.itemId,
+                  content,
+                  isStreaming: Boolean(codexData.isPartial),
+                });
+              }
+              break;
+            }
+
+            case 'agent_message_delta':
+              if (codexData.itemId) {
+                appendCodexTextDelta({
+                  setChatMessages,
+                  itemId: codexData.itemId,
+                  delta: decodeHtmlEntities(String(codexData.delta || '')),
+                });
               }
               break;
 
-            case 'reasoning':
-              if (codexData.message?.content?.trim()) {
-                const content = decodeHtmlEntities(codexData.message.content);
-                setChatMessages((previous) => [
-                  ...previous,
-                  {
-                    type: 'assistant',
-                    content,
-                    timestamp: new Date(),
-                    isThinking: true,
-                  },
-                ]);
+            case 'reasoning': {
+              const content = typeof codexData.message?.content === 'string'
+                ? decodeHtmlEntities(codexData.message.content)
+                : '';
+
+              if (content.trim() && codexData.itemId) {
+                upsertCodexTextMessage({
+                  setChatMessages,
+                  itemId: codexData.itemId,
+                  content,
+                  isThinking: true,
+                  isStreaming: Boolean(codexData.isPartial),
+                });
+              }
+              break;
+            }
+
+            case 'reasoning_delta':
+              if (codexData.itemId) {
+                appendCodexTextDelta({
+                  setChatMessages,
+                  itemId: codexData.itemId,
+                  delta: decodeHtmlEntities(String(codexData.delta || '')),
+                  isThinking: true,
+                });
               }
               break;
 
-            case 'command_execution':
-              if (codexData.command) {
-                setChatMessages((previous) => [
-                  ...previous,
-                  {
-                    type: 'assistant',
-                    content: '',
-                    timestamp: new Date(),
-                    isToolUse: true,
-                    toolName: 'Bash',
-                    toolInput: codexData.command,
-                    toolResult: codexData.output || null,
-                    exitCode: codexData.exitCode,
-                  },
-                ]);
+            case 'reasoning_summary_part':
+              break;
+
+            case 'command_execution': {
+              if (!codexData.itemId || !codexData.command) {
+                break;
+              }
+
+              const toolResult =
+                codexData.output || codexData.exitCode !== null
+                  ? {
+                      content: codexData.output || `Exit code: ${codexData.exitCode}`,
+                      isError:
+                        codexData.status === 'failed'
+                        || (typeof codexData.exitCode === 'number' && codexData.exitCode !== 0),
+                      timestamp: new Date(),
+                    }
+                  : undefined;
+
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId: codexData.itemId,
+                toolName: 'Bash',
+                toolInput: {
+                  command: codexData.command,
+                  cwd: codexData.cwd,
+                },
+                toolResult,
+              });
+              break;
+            }
+
+            case 'command_execution_delta':
+              if (codexData.itemId) {
+                appendCodexToolResultChunk({
+                  setChatMessages,
+                  toolId: codexData.itemId,
+                  toolName: 'Bash',
+                  chunk: String(codexData.delta || ''),
+                });
               }
               break;
 
-            case 'file_change':
-              if (codexData.changes?.length > 0) {
-                const changesList = codexData.changes
-                  .map((change: { kind: string; path: string }) => `${change.kind}: ${change.path}`)
-                  .join('\n');
-                setChatMessages((previous) => [
-                  ...previous,
-                  {
-                    type: 'assistant',
-                    content: '',
-                    timestamp: new Date(),
-                    isToolUse: true,
-                    toolName: 'FileChanges',
-                    toolInput: changesList,
-                    toolResult: {
+            case 'file_change': {
+              if (!codexData.itemId || !Array.isArray(codexData.changes) || codexData.changes.length === 0) {
+                break;
+              }
+
+              const changesList = codexData.changes
+                .map((change: { kind?: { type?: string } | string; path?: string }) => {
+                  const kind =
+                    typeof change.kind === 'string'
+                      ? change.kind
+                      : change.kind?.type || 'update';
+                  return `${kind}: ${change.path || ''}`;
+                })
+                .join('\n');
+
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId: codexData.itemId,
+                toolName: 'Edit',
+                toolInput: changesList,
+                toolResult: codexData.phase === 'completed'
+                  ? {
                       content: `Status: ${codexData.status}`,
-                      isError: false,
-                    },
-                  },
-                ]);
-              }
+                      isError: codexData.status === 'failed',
+                      timestamp: new Date(),
+                    }
+                  : undefined,
+              });
               break;
+            }
 
             case 'mcp_tool_call':
-              setChatMessages((previous) => [
-                ...previous,
-                {
-                  type: 'assistant',
-                  content: '',
-                  timestamp: new Date(),
-                  isToolUse: true,
-                  toolName: `${codexData.server}:${codexData.tool}`,
-                  toolInput: JSON.stringify(codexData.arguments, null, 2),
-                  toolResult: codexData.result
-                    ? JSON.stringify(codexData.result, null, 2)
-                    : codexData.error?.message || null,
-                },
-              ]);
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId: codexData.itemId || `mcp-${Date.now()}`,
+                toolName: `${codexData.server}:${codexData.tool}`,
+                toolInput: codexData.arguments,
+                toolResult:
+                  codexData.phase === 'completed'
+                    ? toCodexToolResult(
+                        codexData.result ?? codexData.error?.message ?? `Status: ${codexData.status}`,
+                        Boolean(codexData.error),
+                      )
+                    : undefined,
+              });
               break;
+
+            case 'dynamic_tool_call': {
+              const toolId = codexData.itemId || `dynamic-tool-${Date.now()}`;
+              const toolName = normalizeCodexToolName(codexData.tool);
+
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId,
+                toolName,
+                toolInput: normalizeCodexToolInput(toolName, codexData.arguments),
+                toolResult:
+                  codexData.phase === 'completed'
+                    ? toCodexToolResult(
+                        codexData.output || `Status: ${codexData.status || 'completed'}`,
+                        codexData.success === false || codexData.status === 'failed',
+                      )
+                    : undefined,
+              });
+              break;
+            }
+
+            case 'collab_agent_tool_call':
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId: codexData.itemId || `collab-tool-${Date.now()}`,
+                toolName: codexData.tool === 'spawnAgent' ? 'Task' : codexData.tool,
+                toolInput: {
+                  prompt: codexData.prompt,
+                  model: codexData.model,
+                  reasoningEffort: codexData.reasoningEffort,
+                  receiverThreadIds: codexData.receiverThreadIds,
+                },
+                toolResult:
+                  codexData.phase === 'completed'
+                    ? toCodexToolResult(
+                        codexData.agentsStates || `Status: ${codexData.status || 'completed'}`,
+                        codexData.status === 'failed',
+                      )
+                    : undefined,
+              });
+              break;
+
+            case 'todo_list': {
+              const plan = Array.isArray(codexData.items)
+                ? codexData.items.map((item: any, index: number) => ({
+                    id: typeof item?.id === 'string' ? item.id : `codex-plan-${index}`,
+                    step:
+                      typeof item?.step === 'string'
+                        ? item.step
+                        : typeof item?.content === 'string'
+                          ? item.content
+                          : typeof item?.text === 'string'
+                            ? item.text
+                            : `Step ${index + 1}`,
+                    status: typeof item?.status === 'string' ? item.status : 'pending',
+                    priority: typeof item?.priority === 'string' ? item.priority : undefined,
+                  }))
+                : [];
+
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId: codexData.itemId || 'codex-plan',
+                toolName: 'update_plan',
+                toolInput: {
+                  explanation: codexData.explanation,
+                  plan,
+                },
+              });
+              break;
+            }
+
+            case 'plan_text':
+              if (typeof codexData.text === 'string' && codexData.text.trim()) {
+                setChatMessages((previous) => [
+                  ...previous,
+                  {
+                    type: 'assistant',
+                    content: decodeHtmlEntities(codexData.text),
+                    timestamp: new Date(),
+                  },
+                ]);
+              }
+              break;
+
+            case 'web_search':
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId: codexData.itemId || `web-search-${Date.now()}`,
+                toolName: 'web_search',
+                toolInput: {
+                  query: codexData.query,
+                  action: codexData.action,
+                },
+              });
+              break;
+
+            case 'function_call':
+            case 'custom_tool_call': {
+              const toolItem = codexData.item || {};
+              const toolName = normalizeCodexToolName(toolItem.name || codexData.name);
+              const toolId = toolItem.call_id || toolItem.id || `codex-tool-${Date.now()}`;
+              const toolInput = normalizeCodexToolInput(
+                toolName,
+                toolItem.arguments ?? toolItem.input ?? codexData.arguments ?? codexData.input,
+              );
+
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId,
+                toolName,
+                toolInput,
+                toolResult: toolItem.error
+                  ? toCodexToolResult(toolItem.error, true)
+                  : undefined,
+              });
+              break;
+            }
+
+            case 'function_call_output':
+            case 'custom_tool_call_output': {
+              const toolItem = codexData.item || {};
+              const toolId = toolItem.call_id || toolItem.id;
+
+              if (!toolId) {
+                break;
+              }
+
+              const output = toolItem.output ?? toolItem.result ?? toolItem.content ?? `Status: ${toolItem.status || 'completed'}`;
+
+              upsertCodexToolMessage({
+                setChatMessages,
+                toolId,
+                toolResult: toCodexToolResult(output, Boolean(toolItem.error)),
+              });
+              break;
+            }
 
             case 'error':
               if (codexData.message?.content) {
@@ -905,6 +1343,16 @@ export function useChatRealtimeHandlers({
           }
         }
 
+        if (codexData.type === 'turn_started') {
+          setIsLoading(true);
+          setCanAbortSession(true);
+          setClaudeStatus({
+            text: 'Processing',
+            tokens: 0,
+            can_interrupt: true,
+          });
+        }
+
         if (codexData.type === 'turn_complete') {
           finalizeLifecycleForCurrentView(latestMessage.sessionId, currentSessionId, selectedSession?.id);
         }
@@ -922,6 +1370,65 @@ export function useChatRealtimeHandlers({
         }
         break;
       }
+
+      case 'codex-approval-request':
+      case 'codex-user-input-request':
+      case 'codex-command-stdin-request':
+        if (!latestMessage.requestId) {
+          break;
+        }
+        {
+          const requestId = latestMessage.requestId;
+
+          setPendingPermissionRequests((previous) => {
+            if (previous.some((request) => request.requestId === requestId)) {
+              return previous;
+            }
+
+            return [
+              ...previous,
+              {
+                requestId,
+                provider: 'codex',
+                requestKind: latestMessage.requestKind || (
+                  latestMessage.type === 'codex-user-input-request'
+                    ? 'user-input'
+                    : latestMessage.type === 'codex-command-stdin-request'
+                      ? 'terminal-stdin'
+                      : 'approval'
+                ),
+                toolName: latestMessage.toolName || 'UnknownTool',
+                input: latestMessage.input,
+                context: latestMessage.context,
+                sessionId: latestMessage.sessionId || null,
+                receivedAt: new Date(),
+              },
+            ];
+          });
+
+          setIsLoading(true);
+          setCanAbortSession(true);
+          setClaudeStatus({
+            text:
+              latestMessage.type === 'codex-user-input-request'
+                ? 'Waiting for input'
+                : latestMessage.type === 'codex-command-stdin-request'
+                  ? 'Waiting for terminal input'
+                  : 'Waiting for permission',
+            tokens: 0,
+            can_interrupt: true,
+          });
+        }
+        break;
+
+      case 'codex-request-cancelled':
+        if (!latestMessage.requestId) {
+          break;
+        }
+        setPendingPermissionRequests((previous) =>
+          previous.filter((request) => request.requestId !== latestMessage.requestId),
+        );
+        break;
 
       case 'codex-complete': {
         const codexPendingSessionId = sessionStorage.getItem('pendingSessionId');
@@ -1095,6 +1602,11 @@ export function useChatRealtimeHandlers({
           if (isCurrentSession) {
             setIsLoading(true);
             setCanAbortSession(true);
+            setClaudeStatus({
+              text: 'Processing',
+              tokens: 0,
+              can_interrupt: true,
+            });
           }
           break;
         }

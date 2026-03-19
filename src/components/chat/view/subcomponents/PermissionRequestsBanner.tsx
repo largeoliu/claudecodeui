@@ -3,9 +3,13 @@ import type { PendingPermissionRequest } from '../../types/types';
 import { buildClaudeToolPermissionEntry, formatToolInputForDisplay } from '../../utils/chatPermissions';
 import { getClaudeSettings } from '../../utils/chatStorage';
 import { getPermissionPanel, registerPermissionPanel } from '../../tools/configs/permissionPanelRegistry';
-import { AskUserQuestionPanel } from '../../tools/components/InteractiveRenderers';
+import {
+  AskUserQuestionPanel,
+  CodexTerminalInputPanel,
+} from '../../tools/components/InteractiveRenderers';
 
 registerPermissionPanel('AskUserQuestion', AskUserQuestionPanel);
+registerPermissionPanel('CodexTerminalInput', CodexTerminalInputPanel);
 
 interface PermissionRequestsBannerProps {
   pendingPermissionRequests: PendingPermissionRequest[];
@@ -41,17 +45,27 @@ export default function PermissionRequestsBanner({
 
         const rawInput = formatToolInputForDisplay(request.input);
         const permissionEntry = buildClaudeToolPermissionEntry(request.toolName, rawInput);
+        const isClaudeRequest = request.provider === 'claude' || !request.provider;
+        const isCodexApproval = request.provider === 'codex' && request.requestKind === 'approval';
         const settings = getClaudeSettings();
-        const alreadyAllowed = permissionEntry ? settings.allowedTools.includes(permissionEntry) : false;
-        const rememberLabel = alreadyAllowed ? 'Allow (saved)' : 'Allow & remember';
+        const alreadyAllowed = isClaudeRequest && permissionEntry
+          ? settings.allowedTools.includes(permissionEntry)
+          : false;
+        const rememberLabel = isCodexApproval
+          ? 'Allow for session'
+          : alreadyAllowed
+            ? 'Allow (saved)'
+            : 'Allow & remember';
         const matchingRequestIds = permissionEntry
           ? pendingPermissionRequests
               .filter(
                 (item) =>
+                  item.provider === request.provider &&
                   buildClaudeToolPermissionEntry(item.toolName, formatToolInputForDisplay(item.input)) === permissionEntry,
               )
               .map((item) => item.requestId)
           : [request.requestId];
+        const canRemember = Boolean(permissionEntry) && (isClaudeRequest || isCodexApproval);
 
         return (
           <div
@@ -94,17 +108,17 @@ export default function PermissionRequestsBanner({
               <button
                 type="button"
                 onClick={() => {
-                  if (permissionEntry && !alreadyAllowed) {
+                  if (isClaudeRequest && permissionEntry && !alreadyAllowed) {
                     handleGrantToolPermission({ entry: permissionEntry, toolName: request.toolName });
                   }
                   handlePermissionDecision(matchingRequestIds, { allow: true, rememberEntry: permissionEntry });
                 }}
                 className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  permissionEntry
+                  canRemember
                     ? 'border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-100 dark:hover:bg-amber-900/30'
                     : 'cursor-not-allowed border-gray-300 text-gray-400'
                 }`}
-                disabled={!permissionEntry}
+                disabled={!canRemember}
               >
                 {rememberLabel}
               </button>

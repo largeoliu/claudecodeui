@@ -41,6 +41,42 @@ export interface ToolDisplayConfig {
   };
 }
 
+const parseMaybeJson = (value: unknown) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+const getUpdatePlanTodos = (input: any) => {
+  const parsedInput = parseMaybeJson(input);
+  const rawPlan = Array.isArray(parsedInput?.plan) ? parsedInput.plan : [];
+
+  return rawPlan
+    .filter((item: unknown): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .map((item: Record<string, unknown>, index: number) => ({
+      id: typeof item.id === 'string' ? item.id : `plan-step-${index}`,
+      content:
+        typeof item.step === 'string'
+          ? item.step
+          : typeof item.content === 'string'
+            ? item.content
+            : `Step ${index + 1}`,
+      status:
+        item.status === 'inProgress' || item.status === 'in_progress'
+          ? 'in_progress'
+          : item.status === 'completed'
+            ? 'completed'
+            : 'pending',
+      priority: typeof item.priority === 'string' ? item.priority : undefined,
+    }));
+};
+
 export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
   // ============================================================================
   // COMMAND TOOLS
@@ -491,6 +527,21 @@ export const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
   // ============================================================================
   // PLAN TOOLS
   // ============================================================================
+
+  update_plan: {
+    input: {
+      type: 'collapsible',
+      title: 'Plan update',
+      defaultOpen: true,
+      contentType: 'todo-list',
+      getContentProps: (input) => ({
+        todos: getUpdatePlanTodos(input)
+      })
+    },
+    result: {
+      hideOnSuccess: true
+    }
+  },
 
   exit_plan_mode: {
     input: {

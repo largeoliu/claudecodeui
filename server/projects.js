@@ -67,7 +67,12 @@ import { open } from 'sqlite';
 import os from 'os';
 import sessionManager from './sessionManager.js';
 import { applyCustomSessionNames } from './database/db.js';
-import { getContextWindow } from '../shared/modelConstants.js';
+import {
+  deleteCodexThreadHard,
+  getCodexThreadTokenUsage,
+  listCodexThreads,
+  readCodexThread,
+} from './openai-codex.js';
 
 // Import TaskMaster detection functions
 async function detectTaskMasterFolder(projectPath) {
@@ -1422,38 +1427,31 @@ async function findCodexJsonlFiles(dir) {
 }
 
 async function buildCodexSessionsIndex() {
-  const codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions');
   const sessionsByProject = new Map();
 
   try {
-    await fs.access(codexSessionsDir);
-  } catch (error) {
-    return sessionsByProject;
-  }
+    const { data: threads } = await listCodexThreads({ pageSize: 200 });
 
-  const jsonlFiles = await findCodexJsonlFiles(codexSessionsDir);
-
-  for (const filePath of jsonlFiles) {
-    try {
-      const sessionData = await parseCodexSessionFile(filePath);
-      if (!sessionData || !sessionData.id) {
-        continue;
-      }
-
-      const normalizedProjectPath = normalizeComparablePath(sessionData.cwd);
+    for (const thread of threads || []) {
+      const normalizedProjectPath = normalizeComparablePath(thread?.cwd);
       if (!normalizedProjectPath) {
         continue;
       }
 
+      const preview = typeof thread?.preview === 'string' ? thread.preview.trim() : '';
+      const summary = preview
+        ? (preview.length > 80 ? `${preview.slice(0, 80)}...` : preview)
+        : 'Codex Session';
       const session = {
-        id: sessionData.id,
-        summary: sessionData.summary || 'Codex Session',
-        messageCount: sessionData.messageCount || 0,
-        lastActivity: sessionData.timestamp ? new Date(sessionData.timestamp) : new Date(),
-        cwd: sessionData.cwd,
-        model: sessionData.model,
-        filePath,
+        id: thread.id,
+        summary,
+        messageCount: 0,
+        lastActivity: new Date(((thread.updatedAt || thread.createdAt || Date.now() / 1000) * 1000)),
+        cwd: thread.cwd,
+        model: thread.modelProvider,
+        filePath: thread.path,
         provider: 'codex',
+        source: thread.source,
       };
 
       if (!sessionsByProject.has(normalizedProjectPath)) {
@@ -1461,9 +1459,9 @@ async function buildCodexSessionsIndex() {
       }
 
       sessionsByProject.get(normalizedProjectPath).push(session);
-    } catch (error) {
-      console.warn(`Could not parse Codex session file ${filePath}:`, error.message);
     }
+  } catch (error) {
+    console.warn('Could not build Codex interactive sessions index:', error.message);
   }
 
   for (const sessions of sessionsByProject.values()) {
@@ -1548,7 +1546,6 @@ async function parseCodexSessionFile(filePath) {
               timestamp: entry.timestamp,
               git: entry.payload.git
             };
-            sessionModel = entry.payload.model || entry.payload.model_provider;
           }
 
           // Count visible user messages and extract summary from the latest plain user input.
@@ -1591,220 +1588,185 @@ async function parseCodexSessionFile(filePath) {
 // Get messages for a specific Codex session
 async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
   try {
-    const codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions');
-
-    // Find the session file by searching for the session ID
-    const findSessionFile = async (dir) => {
-      try {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            const found = await findSessionFile(fullPath);
-            if (found) return found;
-          } else if (entry.name.includes(sessionId) && entry.name.endsWith('.jsonl')) {
-            return fullPath;
-          }
-        }
-      } catch (error) {
-        // Skip directories we can't read
-      }
-      return null;
-    };
-
-    const sessionFilePath = await findSessionFile(codexSessionsDir);
-
-    if (!sessionFilePath) {
-      console.warn(`Codex session file not found for session ${sessionId}`);
-      return { messages: [], total: 0, hasMore: false };
-    }
-
+    const thread = await readCodexThread(sessionId, true);
     const messages = [];
-    let tokenUsage = null;
-    let sessionModel = null;
-    const fileStream = fsSync.createReadStream(sessionFilePath);
-    const rl = readline.createInterface({
-      input: fileStream,
-      crlfDelay: Infinity
-    });
+    let sequence = 0;
+    const baseTimestamp = (thread.createdAt || Math.floor(Date.now() / 1000)) * 1000;
+    const nextTimestamp = () => new Date(baseTimestamp + sequence++).toISOString();
 
-    // Helper to extract text from Codex content array
-    const extractText = (content) => {
-      if (!Array.isArray(content)) return content;
-      return content
-        .map(item => {
-          if (item.type === 'input_text' || item.type === 'output_text') {
-            return item.text;
-          }
-          if (item.type === 'text') {
-            return item.text;
-          }
-          return '';
-        })
-        .filter(Boolean)
-        .join('\n');
+    const pushMessage = (payload) => {
+      messages.push({
+        timestamp: nextTimestamp(),
+        ...payload,
+      });
     };
 
-    for await (const line of rl) {
-      if (line.trim()) {
-        try {
-          const entry = JSON.parse(line);
+    for (const turn of thread.turns || []) {
+      for (const item of turn.items || []) {
+        if (item.type === 'userMessage') {
+          const text = (item.content || [])
+            .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+            .map((part) => part.text)
+            .join('\n')
+            .trim();
 
-          // Extract token usage from token_count events (keep latest)
-          if (entry.type === 'event_msg' && entry.payload?.type === 'token_count' && entry.payload?.info) {
-            const info = entry.payload.info;
-            if (info.total_token_usage) {
-              const contextWindow = info.model_context_window || getContextWindow(sessionModel);
-              tokenUsage = {
-                used: info.total_token_usage.total_tokens || 0,
-                total: contextWindow
-              };
-            }
-          }
-          
-          // Use event_msg.user_message for user-visible inputs.
-          if (entry.type === 'event_msg' && isVisibleCodexUserMessage(entry.payload)) {
-            messages.push({
+          if (text) {
+            pushMessage({
               type: 'user',
-              timestamp: entry.timestamp,
               message: {
                 role: 'user',
-                content: entry.payload.message
-              }
+                content: text,
+              },
             });
           }
+          continue;
+        }
 
-          // response_item.message may include internal prompts for non-assistant roles.
-          // Keep only assistant output from response_item.
-          if (
-            entry.type === 'response_item' &&
-            entry.payload?.type === 'message' &&
-            entry.payload.role === 'assistant'
-          ) {
-            const content = entry.payload.content;
-            const textContent = extractText(content);
-
-            // Only add if there's actual content
-            if (textContent?.trim()) {
-              messages.push({
-                type: 'assistant',
-                timestamp: entry.timestamp,
-                message: {
-                  role: 'assistant',
-                  content: textContent
-                }
-              });
-            }
-          }
-
-          if (entry.type === 'response_item' && entry.payload?.type === 'reasoning') {
-            const summaryText = entry.payload.summary
-              ?.map(s => s.text)
-              .filter(Boolean)
-              .join('\n');
-            if (summaryText?.trim()) {
-              messages.push({
-                type: 'thinking',
-                timestamp: entry.timestamp,
-                message: {
-                  role: 'assistant',
-                  content: summaryText
-                }
-              });
-            }
-          }
-
-          if (entry.type === 'response_item' && entry.payload?.type === 'function_call') {
-            let toolName = entry.payload.name;
-            let toolInput = entry.payload.arguments;
-
-            // Map Codex tool names to Claude equivalents
-            if (toolName === 'shell_command') {
-              toolName = 'Bash';
-              try {
-                const args = JSON.parse(entry.payload.arguments);
-                toolInput = JSON.stringify({ command: args.command });
-              } catch (e) {
-                // Keep original if parsing fails
-              }
-            }
-
-            messages.push({
-              type: 'tool_use',
-              timestamp: entry.timestamp,
-              toolName: toolName,
-              toolInput: toolInput,
-              toolCallId: entry.payload.call_id
+        if (item.type === 'agentMessage') {
+          if (item.text?.trim()) {
+            pushMessage({
+              type: 'assistant',
+              message: {
+                role: 'assistant',
+                content: item.text,
+              },
             });
           }
+          continue;
+        }
 
-          if (entry.type === 'response_item' && entry.payload?.type === 'function_call_output') {
-            messages.push({
+        if (item.type === 'plan') {
+          if (item.text?.trim()) {
+            pushMessage({
+              type: 'assistant',
+              message: {
+                role: 'assistant',
+                content: item.text,
+              },
+            });
+          }
+          continue;
+        }
+
+        if (item.type === 'reasoning') {
+          const reasoningText = [...(item.summary || []), ...(item.content || [])]
+            .filter(Boolean)
+            .join('\n\n')
+            .trim();
+          if (reasoningText) {
+            pushMessage({
+              type: 'thinking',
+              message: {
+                role: 'assistant',
+                content: reasoningText,
+              },
+            });
+          }
+          continue;
+        }
+
+        if (item.type === 'commandExecution') {
+          pushMessage({
+            type: 'tool_use',
+            toolName: 'Bash',
+            toolInput: JSON.stringify({ command: item.command, cwd: item.cwd }),
+            toolCallId: item.id,
+          });
+
+          if (item.aggregatedOutput || item.exitCode !== null) {
+            pushMessage({
               type: 'tool_result',
-              timestamp: entry.timestamp,
-              toolCallId: entry.payload.call_id,
-              output: entry.payload.output
+              toolCallId: item.id,
+              output: item.aggregatedOutput || `Exit code: ${item.exitCode}`,
             });
           }
+          continue;
+        }
 
-          if (entry.type === 'response_item' && entry.payload?.type === 'custom_tool_call') {
-            const toolName = entry.payload.name || 'custom_tool';
-            const input = entry.payload.input || '';
+        if (item.type === 'fileChange') {
+          const toolInput = item.changes
+            .map((change) => `${change.kind?.type || 'update'}: ${change.path}`)
+            .join('\n');
+          pushMessage({
+            type: 'tool_use',
+            toolName: 'Edit',
+            toolInput,
+            toolCallId: item.id,
+          });
+          pushMessage({
+            type: 'tool_result',
+            toolCallId: item.id,
+            output: `Status: ${item.status}`,
+          });
+          continue;
+        }
 
-            if (toolName === 'apply_patch') {
-              // Parse Codex patch format and convert to Claude Edit format
-              const fileMatch = input.match(/\*\*\* Update File: (.+)/);
-              const filePath = fileMatch ? fileMatch[1].trim() : 'unknown';
+        if (item.type === 'mcpToolCall') {
+          pushMessage({
+            type: 'tool_use',
+            toolName: `${item.server}:${item.tool}`,
+            toolInput: JSON.stringify(item.arguments, null, 2),
+            toolCallId: item.id,
+          });
+          pushMessage({
+            type: 'tool_result',
+            toolCallId: item.id,
+            output: item.result
+              ? JSON.stringify(item.result, null, 2)
+              : item.error?.message || `Status: ${item.status}`,
+          });
+          continue;
+        }
 
-              // Extract old and new content from patch
-              const lines = input.split('\n');
-              const oldLines = [];
-              const newLines = [];
+        if (item.type === 'dynamicToolCall') {
+          pushMessage({
+            type: 'tool_use',
+            toolName: item.tool || 'DynamicTool',
+            toolInput: JSON.stringify(item.arguments, null, 2),
+            toolCallId: item.id,
+          });
+          pushMessage({
+            type: 'tool_result',
+            toolCallId: item.id,
+            output: item.contentItems?.length
+              ? JSON.stringify(item.contentItems, null, 2)
+              : `Status: ${item.status}`,
+          });
+          continue;
+        }
 
-              for (const line of lines) {
-                if (line.startsWith('-') && !line.startsWith('---')) {
-                  oldLines.push(line.substring(1));
-                } else if (line.startsWith('+') && !line.startsWith('+++')) {
-                  newLines.push(line.substring(1));
-                }
-              }
+        if (item.type === 'collabAgentToolCall') {
+          pushMessage({
+            type: 'tool_use',
+            toolName: item.tool || 'Task',
+            toolInput: JSON.stringify({
+              prompt: item.prompt,
+              model: item.model,
+              reasoningEffort: item.reasoningEffort,
+              receiverThreadIds: item.receiverThreadIds,
+            }, null, 2),
+            toolCallId: item.id,
+          });
+          pushMessage({
+            type: 'tool_result',
+            toolCallId: item.id,
+            output: JSON.stringify(item.agentsStates || {}, null, 2),
+          });
+          continue;
+        }
 
-              messages.push({
-                type: 'tool_use',
-                timestamp: entry.timestamp,
-                toolName: 'Edit',
-                toolInput: JSON.stringify({
-                  file_path: filePath,
-                  old_string: oldLines.join('\n'),
-                  new_string: newLines.join('\n')
-                }),
-                toolCallId: entry.payload.call_id
-              });
-            } else {
-              messages.push({
-                type: 'tool_use',
-                timestamp: entry.timestamp,
-                toolName: toolName,
-                toolInput: input,
-                toolCallId: entry.payload.call_id
-              });
-            }
-          }
-
-          if (entry.type === 'response_item' && entry.payload?.type === 'custom_tool_call_output') {
-            messages.push({
-              type: 'tool_result',
-              timestamp: entry.timestamp,
-              toolCallId: entry.payload.call_id,
-              output: entry.payload.output || ''
-            });
-          }
-
-        } catch (parseError) {
-          // Skip malformed lines
+        if (item.type === 'webSearch') {
+          pushMessage({
+            type: 'tool_use',
+            toolName: 'web_search',
+            toolInput: JSON.stringify({ query: item.query, action: item.action }, null, 2),
+            toolCallId: item.id,
+          });
         }
       }
     }
+
+    const tokenUsage = getCodexThreadTokenUsage(sessionId);
 
     // Sort by timestamp
     messages.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
@@ -1813,9 +1775,40 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
     // Apply pagination if limit is specified
     if (limit !== null) {
-      const startIndex = Math.max(0, total - offset - limit);
-      const endIndex = total - offset;
-      const paginatedMessages = messages.slice(startIndex, endIndex);
+      let startIndex = Math.max(0, total - offset - limit);
+      let endIndex = total - offset;
+      let paginatedMessages = messages.slice(startIndex, endIndex);
+
+      // Preserve tool_use/tool_result pairs across page boundaries so refreshed views
+      // do not hide a tool card just because the initial page cut between the pair.
+      if (paginatedMessages.length > 0 && startIndex > 0) {
+        const firstMessage = paginatedMessages[0];
+        const previousMessage = messages[startIndex - 1];
+        if (
+          firstMessage?.type === 'tool_result'
+          && previousMessage?.type === 'tool_use'
+          && firstMessage.toolCallId
+          && previousMessage.toolCallId === firstMessage.toolCallId
+        ) {
+          paginatedMessages = [previousMessage, ...paginatedMessages];
+          startIndex -= 1;
+        }
+      }
+
+      if (paginatedMessages.length > 0 && endIndex < total) {
+        const lastMessage = paginatedMessages[paginatedMessages.length - 1];
+        const nextMessage = messages[endIndex];
+        if (
+          lastMessage?.type === 'tool_use'
+          && nextMessage?.type === 'tool_result'
+          && lastMessage.toolCallId
+          && nextMessage.toolCallId === lastMessage.toolCallId
+        ) {
+          paginatedMessages = [...paginatedMessages, nextMessage];
+          endIndex += 1;
+        }
+      }
+
       const hasMore = startIndex > 0;
 
       return {
@@ -1831,46 +1824,16 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
     return { messages, tokenUsage };
 
   } catch (error) {
+    if (error?.code === 'CODEX_THREAD_UNSUPPORTED' || error?.code === 'CODEX_THREAD_NOT_FOUND') {
+      throw error;
+    }
     console.error(`Error reading Codex session messages for ${sessionId}:`, error);
     return { messages: [], total: 0, hasMore: false };
   }
 }
 
 async function deleteCodexSession(sessionId) {
-  try {
-    const codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions');
-
-    const findJsonlFiles = async (dir) => {
-      const files = [];
-      try {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            files.push(...await findJsonlFiles(fullPath));
-          } else if (entry.name.endsWith('.jsonl')) {
-            files.push(fullPath);
-          }
-        }
-      } catch (error) { }
-      return files;
-    };
-
-    const jsonlFiles = await findJsonlFiles(codexSessionsDir);
-
-    for (const filePath of jsonlFiles) {
-      const sessionData = await parseCodexSessionFile(filePath);
-      if (sessionData && sessionData.id === sessionId) {
-        await fs.unlink(filePath);
-        return true;
-      }
-    }
-
-    throw new Error(`Codex session file not found for session ${sessionId}`);
-  } catch (error) {
-    console.error(`Error deleting Codex session ${sessionId}:`, error);
-    throw error;
-  }
+  return deleteCodexThreadHard(sessionId);
 }
 
 async function searchConversations(query, limit = 50, onProjectResult = null, signal = null) {
@@ -2149,101 +2112,109 @@ async function searchCodexSessionsForProject(
 ) {
   const normalizedProjectPath = normalizeComparablePath(projectPath);
   if (!normalizedProjectPath) return;
-  const codexSessionsDir = path.join(os.homedir(), '.codex', 'sessions');
+  let threads = [];
+
   try {
-    await fs.access(codexSessionsDir);
+    const listed = await listCodexThreads({ pageSize: 200 });
+    threads = listed?.data || [];
   } catch {
     return;
   }
 
-  const jsonlFiles = await findCodexJsonlFiles(codexSessionsDir);
+  const maybeAddMatch = (matches, role, text, timestamp, messageUuid = null) => {
+    const normalizedText = typeof text === 'string' ? text.trim() : '';
+    if (!normalizedText || matches.length >= 2) {
+      return false;
+    }
 
-  for (const filePath of jsonlFiles) {
+    const textLower = normalizedText.toLowerCase();
+    if (!allWordsMatch(textLower)) {
+      return false;
+    }
+
+    const { snippet, highlights } = buildSnippet(normalizedText, textLower);
+    matches.push({
+      role,
+      snippet,
+      highlights,
+      timestamp: timestamp || null,
+      provider: 'codex',
+      messageUuid,
+    });
+    addMatches(1);
+    return true;
+  };
+
+  for (const thread of threads) {
     if (getTotalMatches() >= limit || isAborted()) break;
+    if (normalizeComparablePath(thread?.cwd) !== normalizedProjectPath) continue;
 
+    let fullThread;
     try {
-      const fileStream = fsSync.createReadStream(filePath);
-      const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-      // First pass: read session_meta to check project path match
-      let sessionMeta = null;
-      for await (const line of rl) {
-        if (!line.trim()) continue;
-        try {
-          const entry = JSON.parse(line);
-          if (entry.type === 'session_meta' && entry.payload) {
-            sessionMeta = entry.payload;
-            break;
-          }
-        } catch { continue; }
-      }
-
-      // Skip sessions that don't belong to this project
-      if (!sessionMeta) continue;
-      const sessionProjectPath = normalizeComparablePath(sessionMeta.cwd);
-      if (sessionProjectPath !== normalizedProjectPath) continue;
-
-      // Second pass: re-read file to find matching messages
-      const fileStream2 = fsSync.createReadStream(filePath);
-      const rl2 = readline.createInterface({ input: fileStream2, crlfDelay: Infinity });
-      let lastUserMessage = null;
-      const matches = [];
-
-      for await (const line of rl2) {
-        if (getTotalMatches() >= limit || isAborted()) break;
-        if (!line.trim()) continue;
-
-        let entry;
-        try { entry = JSON.parse(line); } catch { continue; }
-
-        let text = null;
-        let role = null;
-
-        if (entry.type === 'event_msg' && entry.payload?.type === 'user_message' && entry.payload.message) {
-          text = entry.payload.message;
-          role = 'user';
-          lastUserMessage = text;
-        } else if (entry.type === 'response_item' && entry.payload?.type === 'message') {
-          const contentParts = entry.payload.content || [];
-          if (entry.payload.role === 'user') {
-            text = contentParts
-              .filter(p => p.type === 'input_text' && p.text)
-              .map(p => p.text)
-              .join(' ');
-            role = 'user';
-            if (text) lastUserMessage = text;
-          } else if (entry.payload.role === 'assistant') {
-            text = contentParts
-              .filter(p => p.type === 'output_text' && p.text)
-              .map(p => p.text)
-              .join(' ');
-            role = 'assistant';
-          }
-        }
-
-        if (!text || !role) continue;
-        const textLower = text.toLowerCase();
-        if (!allWordsMatch(textLower)) continue;
-
-        if (matches.length < 2) {
-          const { snippet, highlights } = buildSnippet(text, textLower);
-          matches.push({ role, snippet, highlights, timestamp: entry.timestamp || null, provider: 'codex' });
-          addMatches(1);
-        }
-      }
-
-      if (matches.length > 0) {
-        projectResult.sessions.push({
-          sessionId: sessionMeta.id,
-          provider: 'codex',
-          sessionSummary: lastUserMessage
-            ? (lastUserMessage.length > 50 ? lastUserMessage.substring(0, 50) + '...' : lastUserMessage)
-            : 'Codex Session',
-          matches
-        });
-      }
+      fullThread = await readCodexThread(thread.id, true);
     } catch {
       continue;
+    }
+
+    const matches = [];
+    const sessionTimestamp = new Date(
+      ((fullThread?.updatedAt || fullThread?.createdAt || thread?.updatedAt || thread?.createdAt || Date.now() / 1000) * 1000),
+    ).toISOString();
+    let lastUserMessage = typeof thread?.preview === 'string' ? thread.preview.trim() : '';
+
+    for (const turn of fullThread?.turns || []) {
+      if (getTotalMatches() >= limit || isAborted() || matches.length >= 2) {
+        break;
+      }
+
+      for (const item of turn.items || []) {
+        if (getTotalMatches() >= limit || isAborted() || matches.length >= 2) {
+          break;
+        }
+
+        if (item.type === 'userMessage') {
+          const text = (item.content || [])
+            .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+            .map((part) => part.text)
+            .join('\n')
+            .trim();
+
+          if (text) {
+            lastUserMessage = text;
+            maybeAddMatch(matches, 'user', text, sessionTimestamp, item.id || null);
+          }
+          continue;
+        }
+
+        if (item.type === 'agentMessage') {
+          maybeAddMatch(matches, 'assistant', item.text, sessionTimestamp, item.id || null);
+          continue;
+        }
+
+        if (item.type === 'plan') {
+          maybeAddMatch(matches, 'assistant', item.text, sessionTimestamp, item.id || null);
+          continue;
+        }
+
+        if (item.type === 'reasoning') {
+          const reasoningText = [...(item.summary || []), ...(item.content || [])]
+            .filter(Boolean)
+            .join('\n\n')
+            .trim();
+          maybeAddMatch(matches, 'assistant', reasoningText, sessionTimestamp, item.id || null);
+        }
+      }
+    }
+
+    if (matches.length > 0) {
+      projectResult.sessions.push({
+        sessionId: thread.id,
+        provider: 'codex',
+        sessionSummary: lastUserMessage
+          ? (lastUserMessage.length > 50 ? `${lastUserMessage.substring(0, 50)}...` : lastUserMessage)
+          : 'Codex Session',
+        matches,
+      });
     }
   }
 }

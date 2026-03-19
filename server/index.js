@@ -47,10 +47,9 @@ import mime from 'mime-types';
 import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations } from './projects.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
-import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
+import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions, getCodexThreadTokenUsage } from './openai-codex.js';
 import { spawnGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli.js';
 import sessionManager from './sessionManager.js';
-import { getContextWindow, DEFAULT_CONTEXT_WINDOW } from '../shared/modelConstants.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
 import mcpRoutes from './routes/mcp.js';
@@ -2236,88 +2235,19 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
 
         // Handle Codex sessions
         if (provider === 'codex') {
-            const codexSessionsDir = path.join(homeDir, '.codex', 'sessions');
+            const tokenUsage = getCodexThreadTokenUsage(safeSessionId);
 
-            // Find the session file by searching for the session ID
-            const findSessionFile = async (dir) => {
-                try {
-                    const entries = await fsPromises.readdir(dir, { withFileTypes: true });
-                    for (const entry of entries) {
-                        const fullPath = path.join(dir, entry.name);
-                        if (entry.isDirectory()) {
-                            const found = await findSessionFile(fullPath);
-                            if (found) return found;
-                        } else if (entry.name.includes(safeSessionId) && entry.name.endsWith('.jsonl')) {
-                            return fullPath;
-                        }
-                    }
-                } catch (error) {
-                    // Skip directories we can't read
-                }
-                return null;
-            };
-
-            const sessionFilePath = await findSessionFile(codexSessionsDir);
-
-            if (!sessionFilePath) {
-                return res.status(404).json({ error: 'Codex session file not found', sessionId: safeSessionId });
+            if (!tokenUsage) {
+                return res.json({
+                    used: 0,
+                    total: 0,
+                    breakdown: { input: 0, cacheRead: 0, output: 0, reasoning: 0 },
+                    unsupported: true,
+                    message: 'Token usage is only available for active interactive Codex threads'
+                });
             }
 
-            // Read and parse the Codex JSONL file
-            let fileContent;
-            try {
-                fileContent = await fsPromises.readFile(sessionFilePath, 'utf8');
-            } catch (error) {
-                if (error.code === 'ENOENT') {
-                    return res.status(404).json({ error: 'Session file not found', path: sessionFilePath });
-                }
-                throw error;
-            }
-            const lines = fileContent.trim().split('\n');
-
-            // First pass: extract session model from session_meta
-            let sessionModel = null;
-            for (let i = 0; i < lines.length; i++) {
-                try {
-                    const entry = JSON.parse(lines[i]);
-                    if (entry.type === 'session_meta' && entry.payload) {
-                        sessionModel = entry.payload.model || entry.payload.model_provider || null;
-                        break;
-                    }
-                } catch (parseError) {
-                    continue;
-                }
-            }
-
-            // Second pass: find the latest token_count event with info (scan from end)
-            let totalTokens = 0;
-            let contextWindow = getContextWindow(sessionModel);
-
-            for (let i = lines.length - 1; i >= 0; i--) {
-                try {
-                    const entry = JSON.parse(lines[i]);
-
-                    // Codex stores token info in event_msg with type: "token_count"
-                    if (entry.type === 'event_msg' && entry.payload?.type === 'token_count' && entry.payload?.info) {
-                        const tokenInfo = entry.payload.info;
-                        if (tokenInfo.total_token_usage) {
-                            totalTokens = tokenInfo.total_token_usage.total_tokens || 0;
-                        }
-                        if (tokenInfo.model_context_window) {
-                            contextWindow = tokenInfo.model_context_window;
-                        }
-                        break; // Stop after finding the latest token count
-                    }
-                } catch (parseError) {
-                    // Skip lines that can't be parsed
-                    continue;
-                }
-            }
-
-            return res.json({
-                used: totalTokens,
-                total: contextWindow
-            });
+            return res.json(tokenUsage);
         }
 
         // Handle Claude sessions (default)

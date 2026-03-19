@@ -58,6 +58,7 @@ interface UseChatComposerStateArgs {
   setCanAbortSession: (canAbort: boolean) => void;
   setClaudeStatus: (status: { text: string; tokens: number; can_interrupt: boolean } | null) => void;
   setIsUserScrolledUp: (isScrolledUp: boolean) => void;
+  pendingPermissionRequests: PendingPermissionRequest[];
   setPendingPermissionRequests: Dispatch<SetStateAction<PendingPermissionRequest[]>>;
 }
 
@@ -129,6 +130,7 @@ export function useChatComposerState({
   setCanAbortSession,
   setClaudeStatus,
   setIsUserScrolledUp,
+  pendingPermissionRequests,
   setPendingPermissionRequests,
 }: UseChatComposerStateArgs) {
   const [input, setInput] = useState(() => {
@@ -956,7 +958,60 @@ export function useChatComposerState({
         return;
       }
 
+      const requestLookup = new Map(
+        pendingPermissionRequests.map((request) => [request.requestId, request]),
+      );
+
       validIds.forEach((requestId) => {
+        const request = requestLookup.get(requestId);
+        if (request?.provider === 'codex') {
+          if (request.requestKind === 'user-input') {
+            const updatedInput =
+              decision?.updatedInput && typeof decision.updatedInput === 'object'
+                ? (decision.updatedInput as Record<string, unknown>)
+                : null;
+            const answers =
+              updatedInput?.answers && typeof updatedInput.answers === 'object' && !Array.isArray(updatedInput.answers)
+                ? updatedInput.answers
+                : {};
+
+            sendMessage({
+              type: 'codex-user-input-response',
+              requestId,
+              answers,
+            });
+            return;
+          }
+
+          if (request.requestKind === 'terminal-stdin') {
+            const updatedInput =
+              decision?.updatedInput && typeof decision.updatedInput === 'object'
+                ? (decision.updatedInput as Record<string, unknown>)
+                : null;
+            const text =
+              typeof decision?.updatedInput === 'string'
+                ? decision.updatedInput
+                : typeof updatedInput?.text === 'string'
+                  ? updatedInput.text
+                  : '';
+
+            sendMessage({
+              type: 'codex-command-stdin-response',
+              requestId,
+              text,
+            });
+            return;
+          }
+
+          sendMessage({
+            type: 'codex-approval-response',
+            requestId,
+            allow: Boolean(decision?.allow),
+            rememberEntry: decision?.rememberEntry,
+          });
+          return;
+        }
+
         sendMessage({
           type: 'claude-permission-response',
           requestId,
@@ -975,7 +1030,7 @@ export function useChatComposerState({
         return next;
       });
     },
-    [sendMessage, setClaudeStatus, setPendingPermissionRequests],
+    [pendingPermissionRequests, sendMessage, setClaudeStatus, setPendingPermissionRequests],
   );
 
   const [isInputFocused, setIsInputFocused] = useState(false);

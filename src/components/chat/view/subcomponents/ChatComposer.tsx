@@ -158,9 +158,9 @@ export default function ChatComposer({
     bottom: textareaRect ? window.innerHeight - textareaRect.top + 8 : 90,
   };
 
-  // Detect if the AskUserQuestion interactive panel is active
+  // Hide the normal composer while the session is blocked on a dedicated interactive panel.
   const hasQuestionPanel = pendingPermissionRequests.some(
-    (r) => r.toolName === 'AskUserQuestion'
+    (r) => r.toolName === 'AskUserQuestion' || r.toolName === 'CodexTerminalInput'
   );
 
   // On mobile, when input is focused, float the input box at the bottom

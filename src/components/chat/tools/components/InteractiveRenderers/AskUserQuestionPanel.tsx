@@ -75,7 +75,10 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
       const isOther = otherActive.get(idx) || false;
       const otherText = (otherTexts.get(idx) || '').trim();
       if (isOther && otherText) selected.push(otherText);
-      if (selected.length > 0) answers[q.question] = selected.join(', ');
+      const answerKey = typeof q.id === 'string' && q.id.trim() ? q.id : q.question;
+      if (selected.length > 0 && answerKey) {
+        answers[answerKey] = selected.join(', ');
+      }
     });
     return answers;
   }, [questions, selections, otherActive, otherTexts]);
@@ -96,6 +99,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
     const q = questions[currentStep];
     if (!q) return;
     const multi = q.multiSelect || false;
+    const allowOther = q.allowOther !== false;
     const optCount = q.options.length;
 
     // Number keys 1-9 for options
@@ -107,7 +111,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
     }
 
     // 0 for "Other"
-    if (e.key === '0') {
+    if (allowOther && e.key === '0') {
       e.preventDefault();
       toggleOther(currentStep, multi);
       return;
@@ -136,6 +140,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   const isSingle = total === 1;
   const q = questions[currentStep];
   const multi = q.multiSelect || false;
+  const allowOther = q.allowOther !== false;
   const selected = selections.get(currentStep) || new Set<string>();
   const isOtherOn = otherActive.get(currentStep) || false;
   const isLast = currentStep === total - 1;
@@ -170,7 +175,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
 
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                Claude needs your input
+                Agent needs your input
               </span>
               {q.header && (
                 <span className="inline-flex items-center rounded border border-blue-100 bg-blue-50 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-blue-600 dark:border-blue-800/50 dark:bg-blue-900/30 dark:text-blue-400">
@@ -270,36 +275,37 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
               );
             })}
 
-            {/* "Other" option */}
-            <button
-              type="button"
-              onClick={() => toggleOther(currentStep, multi)}
-              className={`group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all duration-150 ${
-                isOtherOn
-                  ? 'border-blue-300 bg-blue-50/80 ring-1 ring-blue-200/50 dark:border-blue-600 dark:bg-blue-900/25 dark:ring-blue-700/30'
-                  : 'dark:hover:bg-gray-750/50 border-dashed border-gray-200 hover:border-gray-300 hover:bg-gray-50/60 dark:border-gray-700/60 dark:hover:border-gray-600'
-              }`}
-            >
-              <kbd className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded font-mono text-[10px] transition-all duration-150 ${
-                isOtherOn
-                  ? 'bg-blue-500 font-semibold text-white dark:bg-blue-500'
-                  : 'border border-gray-200 bg-gray-100 text-gray-400 group-hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500 dark:group-hover:border-gray-600'
-              }`}>
-                0
-              </kbd>
-              <span className={`text-[13px] leading-tight transition-colors ${
-                isOtherOn
-                  ? 'font-medium text-gray-900 dark:text-gray-100'
-                  : 'text-gray-500 dark:text-gray-400'
-              }`}>
-                Other...
-              </span>
-              {isOtherOn && (
-                <svg className="ml-auto h-4 w-4 flex-shrink-0 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                </svg>
-              )}
-            </button>
+            {allowOther && (
+              <button
+                type="button"
+                onClick={() => toggleOther(currentStep, multi)}
+                className={`group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all duration-150 ${
+                  isOtherOn
+                    ? 'border-blue-300 bg-blue-50/80 ring-1 ring-blue-200/50 dark:border-blue-600 dark:bg-blue-900/25 dark:ring-blue-700/30'
+                    : 'dark:hover:bg-gray-750/50 border-dashed border-gray-200 hover:border-gray-300 hover:bg-gray-50/60 dark:border-gray-700/60 dark:hover:border-gray-600'
+                }`}
+              >
+                <kbd className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded font-mono text-[10px] transition-all duration-150 ${
+                  isOtherOn
+                    ? 'bg-blue-500 font-semibold text-white dark:bg-blue-500'
+                    : 'border border-gray-200 bg-gray-100 text-gray-400 group-hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500 dark:group-hover:border-gray-600'
+                }`}>
+                  0
+                </kbd>
+                <span className={`text-[13px] leading-tight transition-colors ${
+                  isOtherOn
+                    ? 'font-medium text-gray-900 dark:text-gray-100'
+                    : 'text-gray-500 dark:text-gray-400'
+                }`}>
+                  Other...
+                </span>
+                {isOtherOn && (
+                  <svg className="ml-auto h-4 w-4 flex-shrink-0 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                )}
+              </button>
+            )}
 
             {/* Other text input — inline */}
             {isOtherOn && (

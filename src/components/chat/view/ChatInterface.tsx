@@ -195,6 +195,7 @@ function ChatInterface({
     setCanAbortSession,
     setClaudeStatus,
     setIsUserScrolledUp,
+    pendingPermissionRequests,
     setPendingPermissionRequests,
   });
 
@@ -204,7 +205,7 @@ function ChatInterface({
   // would be stuck in "Processing..." forever without this reset.
   const handleWebSocketReconnect = useCallback(async () => {
     if (!selectedProject || !selectedSession) return;
-    const provider = (localStorage.getItem('selected-provider') as any) || 'claude';
+    const provider = selectedSession.__provider || (localStorage.getItem('selected-provider') as any) || 'claude';
     const messages = await loadSessionMessages(selectedProject.name, selectedSession.id, false, provider);
     if (messages && messages.length > 0) {
       setChatMessages(messages);

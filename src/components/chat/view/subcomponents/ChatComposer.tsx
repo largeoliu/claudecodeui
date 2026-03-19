@@ -334,7 +334,7 @@ export default function ChatComposer({
 
             <button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={(!input.trim() && attachedImages.length === 0) || isLoading}
               onMouseDown={(event) => {
                 event.preventDefault();
                 onSubmit(event);

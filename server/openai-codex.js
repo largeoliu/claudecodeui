@@ -1,3 +1,5 @@
+import fs from 'fs/promises';
+import path from 'path';
 import { notifyRunFailed, notifyRunStopped } from './services/notification-orchestrator.js';
 import {
   codexAppServer,
@@ -5,6 +7,91 @@ import {
   mapPermissionModeToCodexOptions,
   sendWriterMessage,
 } from './services/codex-app-server.js';
+
+async function handleImagesForCodex(command, images, cwd) {
+  const tempImagePaths = [];
+  let tempDir = null;
+
+  if (!images || images.length === 0) {
+    return { input: command, tempImagePaths, tempDir };
+  }
+
+  try {
+    const workingDir = cwd || process.cwd();
+    tempDir = path.join(workingDir, '.tmp', 'images', Date.now().toString());
+    await fs.mkdir(tempDir, { recursive: true });
+
+    const inputItems = [
+      {
+        type: 'text',
+        text: typeof command === 'string' ? command : String(command ?? ''),
+        text_elements: [],
+      },
+    ];
+
+    for (const [index, image] of images.entries()) {
+      const imageData = typeof image?.data === 'string' ? image.data : null;
+      if (!imageData) {
+        continue;
+      }
+
+      const matches = imageData.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) {
+        console.error('[Codex] Invalid image data format');
+        continue;
+      }
+
+      const [, mimeType, base64Data] = matches;
+      const extension = (mimeType.split('/')[1] || 'png').replace(/[^a-zA-Z0-9.+-]/g, '_');
+      const filename = `image_${index}.${extension}`;
+      const filepath = path.join(tempDir, filename);
+
+      await fs.writeFile(filepath, Buffer.from(base64Data, 'base64'));
+      tempImagePaths.push(filepath);
+      inputItems.push({
+        type: 'localImage',
+        path: filepath,
+      });
+    }
+
+    if (tempImagePaths.length === 0) {
+      if (tempDir) {
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+      return { input: command, tempImagePaths: [], tempDir: null };
+    }
+
+    console.log(`[Codex] Processed ${tempImagePaths.length} images to temp directory: ${tempDir}`);
+    return { input: inputItems, tempImagePaths, tempDir };
+  } catch (error) {
+    console.error('[Codex] Error processing images:', error);
+    return { input: command, tempImagePaths, tempDir };
+  }
+}
+
+async function cleanupTempFiles(tempImagePaths, tempDir) {
+  if ((!tempImagePaths || tempImagePaths.length === 0) && !tempDir) {
+    return;
+  }
+
+  try {
+    for (const imagePath of tempImagePaths) {
+      await fs.unlink(imagePath).catch((error) => {
+        console.error(`[Codex] Failed to delete temp image ${imagePath}:`, error.message);
+      });
+    }
+
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch((error) => {
+        console.error(`[Codex] Failed to delete temp directory ${tempDir}:`, error.message);
+      });
+    }
+
+    console.log(`[Codex] Cleaned up ${tempImagePaths.length} temp image files`);
+  } catch (error) {
+    console.error('[Codex] Error during temp file cleanup:', error);
+  }
+}
 
 export async function queryCodex(command, options = {}, writer) {
   const {
@@ -15,6 +102,7 @@ export async function queryCodex(command, options = {}, writer) {
     model,
     permissionMode = 'plan',
     reasoningEffort,
+    images,
   } = options;
 
   const workingDirectory = cwd || projectPath || process.cwd();
@@ -23,6 +111,8 @@ export async function queryCodex(command, options = {}, writer) {
   let threadId = sessionId || null;
   let completion = null;
   let turn = null;
+  let tempImagePaths = [];
+  let tempDir = null;
 
   try {
     if (sessionId) {
@@ -59,9 +149,14 @@ export async function queryCodex(command, options = {}, writer) {
       writer.setSessionId(threadId);
     }
 
+    const imageResult = await handleImagesForCodex(command, images, workingDirectory);
+    const finalInput = imageResult.input;
+    tempImagePaths = imageResult.tempImagePaths;
+    tempDir = imageResult.tempDir;
+
     const startedTurn = await codexAppServer.startTurn(
       threadId,
-      command,
+      finalInput,
       {
         cwd: workingDirectory,
         approvalPolicy,
@@ -117,6 +212,8 @@ export async function queryCodex(command, options = {}, writer) {
     }
 
     throw error;
+  } finally {
+    await cleanupTempFiles(tempImagePaths, tempDir);
   }
 }
 

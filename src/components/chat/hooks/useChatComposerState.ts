@@ -497,12 +497,13 @@ export function useChatComposerState({
     ) => {
       event.preventDefault();
       const currentInput = inputValueRef.current;
-      if (!currentInput.trim() || isLoading || !selectedProject) {
+      const trimmedInput = currentInput.trim();
+      const hasAttachedImages = attachedImages.length > 0;
+      if ((!trimmedInput && !hasAttachedImages) || isLoading || !selectedProject) {
         return;
       }
 
       // Intercept slash commands: if input starts with /commandName, execute as command with args
-      const trimmedInput = currentInput.trim();
       if (trimmedInput.startsWith('/')) {
         const firstSpace = trimmedInput.indexOf(' ');
         const commandName = firstSpace > 0 ? trimmedInput.slice(0, firstSpace) : trimmedInput;
@@ -523,10 +524,11 @@ export function useChatComposerState({
         }
       }
 
-      let messageContent = currentInput;
+      const basePrompt = trimmedInput || 'Please analyze the attached image(s).';
+      let messageContent = basePrompt;
       const selectedThinkingMode = thinkingModes.find((mode: { id: string; prefix?: string }) => mode.id === thinkingMode);
       if (provider === 'claude' && selectedThinkingMode && selectedThinkingMode.prefix) {
-        messageContent = `${selectedThinkingMode.prefix}: ${currentInput}`;
+        messageContent = `${selectedThinkingMode.prefix}: ${basePrompt}`;
       }
 
       let uploadedImages: unknown[] = [];
@@ -659,6 +661,7 @@ export function useChatComposerState({
             reasoningEffort: codexReasoningEffort,
             sessionSummary,
             permissionMode,
+            images: uploadedImages,
           },
         });
       } else if (provider === 'gemini') {

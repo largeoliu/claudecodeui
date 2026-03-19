@@ -101,6 +101,7 @@ temp/
 .netlify
 
 # AI specific
+.agent/
 .claude/
 .cursor/
 .roo/

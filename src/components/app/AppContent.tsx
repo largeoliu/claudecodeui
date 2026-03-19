@@ -3,17 +3,28 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Sidebar from '../sidebar/view/Sidebar';
 import MainContent from '../main-content/view/MainContent';
-import { useWebSocket } from '../../contexts/WebSocketContext';
+import { useWebSocket, useWebSocketMessageEffect } from '../../contexts/WebSocketContext';
 import { useDeviceSettings } from '../../hooks/useDeviceSettings';
 import { useSessionProtection } from '../../hooks/useSessionProtection';
 import { useProjectsState } from '../../hooks/useProjectsState';
+
+type ActiveSessionsMessage = {
+  type?: 'active-sessions';
+  sessions?: {
+    claude?: string[];
+    cursor?: string[];
+    codex?: string[];
+    gemini?: string[];
+    [key: string]: unknown;
+  };
+};
 
 export default function AppContent() {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId?: string }>();
   const { t } = useTranslation('common');
   const { isMobile } = useDeviceSettings({ trackPWA: false });
-  const { ws, sendMessage, latestMessage, isConnected } = useWebSocket();
+  const { ws, sendMessage, isConnected } = useWebSocket();
   const wasConnectedRef = useRef(false);
 
   const {
@@ -24,6 +35,7 @@ export default function AppContent() {
     markSessionAsProcessing,
     markSessionAsNotProcessing,
     replaceTemporarySession,
+    syncSessionsFromServer,
   } = useSessionProtection();
 
   const {
@@ -44,7 +56,6 @@ export default function AppContent() {
   } = useProjectsState({
     sessionId,
     navigate,
-    latestMessage,
     isMobile,
     activeSessions,
   });
@@ -105,29 +116,40 @@ export default function AppContent() {
     };
   }, [navigate, refreshProjectsSilently, setActiveTab, setSidebarOpen]);
 
-  // Permission recovery: query pending permissions on WebSocket reconnect or session change
   useEffect(() => {
-    const isReconnect = isConnected && !wasConnectedRef.current;
-
-    if (isReconnect) {
-      wasConnectedRef.current = true;
-    } else if (!isConnected) {
+    if (!isConnected) {
       wasConnectedRef.current = false;
+      return;
     }
 
-    if (isConnected && selectedSession?.id) {
-      sendMessage({
-        type: 'get-pending-permissions',
-        sessionId: selectedSession.id
-      });
-    }
-  }, [isConnected, selectedSession?.id, sendMessage]);
+    wasConnectedRef.current = true;
+    sendMessage({ type: 'get-active-sessions' });
+  }, [isConnected, sendMessage]);
+
+  useWebSocketMessageEffect<ActiveSessionsMessage>(
+    (message) => {
+      const activeSessionsData = message.sessions;
+      if (!activeSessionsData) {
+        return;
+      }
+
+      const allActiveIds = [
+        ...(Array.isArray(activeSessionsData.claude) ? activeSessionsData.claude : []),
+        ...(Array.isArray(activeSessionsData.cursor) ? activeSessionsData.cursor : []),
+        ...(Array.isArray(activeSessionsData.codex) ? activeSessionsData.codex : []),
+        ...(Array.isArray(activeSessionsData.gemini) ? activeSessionsData.gemini : []),
+      ];
+
+      syncSessionsFromServer(allActiveIds);
+    },
+    (message) => message.type === 'active-sessions',
+  );
 
   return (
     <div className="fixed inset-0 flex bg-background">
       {!isMobile ? (
         <div className="h-full flex-shrink-0 border-r border-border/50">
-          <Sidebar {...sidebarSharedProps} />
+          <Sidebar {...sidebarSharedProps} processingSessions={processingSessions} />
         </div>
       ) : (
         <div
@@ -153,7 +175,7 @@ export default function AppContent() {
             onClick={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}
           >
-            <Sidebar {...sidebarSharedProps} />
+            <Sidebar {...sidebarSharedProps} processingSessions={processingSessions} />
           </div>
         </div>
       )}
@@ -166,7 +188,6 @@ export default function AppContent() {
           setActiveTab={setActiveTab}
           ws={ws}
           sendMessage={sendMessage}
-          latestMessage={latestMessage}
           isMobile={isMobile}
           onMenuClick={() => setSidebarOpen(true)}
           isLoading={isLoadingProjects}

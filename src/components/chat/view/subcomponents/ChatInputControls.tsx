@@ -1,6 +1,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import type { CodexReasoningEffort } from '../../constants/codexReasoningEfforts';
 import type { PermissionMode, Provider } from '../../types/types';
+import CodexReasoningEffortSelector from './CodexReasoningEffortSelector';
 import ThinkingModeSelector from './ThinkingModeSelector';
 import TokenUsagePie from './TokenUsagePie';
 
@@ -10,6 +12,8 @@ interface ChatInputControlsProps {
   provider: Provider | string;
   thinkingMode: string;
   setThinkingMode: React.Dispatch<React.SetStateAction<string>>;
+  codexReasoningEffort: CodexReasoningEffort;
+  setCodexReasoningEffort: (effort: CodexReasoningEffort) => void;
   tokenBudget: { used?: number; total?: number } | null;
   slashCommandsCount: number;
   onToggleCommandMenu: () => void;
@@ -26,6 +30,8 @@ export default function ChatInputControls({
   provider,
   thinkingMode,
   setThinkingMode,
+  codexReasoningEffort,
+  setCodexReasoningEffort,
   tokenBudget,
   slashCommandsCount,
   onToggleCommandMenu,
@@ -67,6 +73,15 @@ export default function ChatInputControls({
 
       {provider === 'claude' && (
         <ThinkingModeSelector selectedMode={thinkingMode} onModeChange={setThinkingMode} onClose={() => {}} className="" />
+      )}
+
+      {provider === 'codex' && (
+        <CodexReasoningEffortSelector
+          selectedEffort={codexReasoningEffort}
+          onEffortChange={setCodexReasoningEffort}
+          onClose={() => {}}
+          className=""
+        />
       )}
 
       <TokenUsagePie used={tokenBudget?.used || 0} total={tokenBudget?.total || parseInt(import.meta.env.VITE_CONTEXT_WINDOW) || 160000} />

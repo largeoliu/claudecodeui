@@ -1,5 +1,6 @@
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useTranslation } from 'react-i18next';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { ChatMessage } from '../../types/types';
 import type { Project, ProjectSession, SessionProvider } from '../../../../types/app';
@@ -43,6 +44,7 @@ interface ChatMessagesPaneProps {
   isLoadingAllMessages: boolean;
   loadAllJustFinished: boolean;
   showLoadAllOverlay: boolean;
+  isSearchScrollActive: boolean;
   createDiff: any;
   onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
   onShowSettings?: () => void;
@@ -89,6 +91,7 @@ export default function ChatMessagesPane({
   isLoadingAllMessages,
   loadAllJustFinished,
   showLoadAllOverlay,
+  isSearchScrollActive,
   createDiff,
   onFileOpen,
   onShowSettings,
@@ -103,6 +106,8 @@ export default function ChatMessagesPane({
   const messageKeyMapRef = useRef<WeakMap<ChatMessage, string>>(new WeakMap());
   const allocatedKeysRef = useRef<Set<string>>(new Set());
   const generatedMessageKeyCounterRef = useRef(0);
+  const topContentRef = useRef<HTMLDivElement | null>(null);
+  const [topContentHeight, setTopContentHeight] = useState(0);
 
   // Keep keys stable across prepends so existing MessageComponent instances retain local state.
   const getMessageKey = useCallback((message: ChatMessage) => {
@@ -128,12 +133,74 @@ export default function ChatMessagesPane({
     return candidateKey;
   }, []);
 
+  const shouldVirtualizeMessages = !isSearchScrollActive && visibleMessages.length > 40;
+  const rowVirtualizer = useVirtualizer({
+    count: shouldVirtualizeMessages ? visibleMessages.length : 0,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 220,
+    overscan: 8,
+    getItemKey: (index) => getMessageKey(visibleMessages[index] as ChatMessage),
+    scrollMargin: topContentHeight,
+  });
+  const virtualItems = shouldVirtualizeMessages ? rowVirtualizer.getVirtualItems() : [];
+
+  useEffect(() => {
+    const node = topContentRef.current;
+    if (!node) {
+      setTopContentHeight(0);
+      return;
+    }
+
+    const updateTopContentHeight = () => {
+      setTopContentHeight(node.offsetHeight);
+    };
+
+    updateTopContentHeight();
+
+    const observer = new ResizeObserver(() => {
+      updateTopContentHeight();
+    });
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [allMessagesLoaded, chatMessages.length, hasMoreMessages, isLoadingAllMessages, isLoadingMoreMessages, loadAllJustFinished, showLoadAllOverlay]);
+
+  useEffect(() => {
+    if (shouldVirtualizeMessages) {
+      rowVirtualizer.measure();
+    }
+  }, [rowVirtualizer, shouldVirtualizeMessages, topContentHeight, visibleMessages.length]);
+
+  const renderMessage = useCallback((message: ChatMessage, index: number) => {
+    const prevMessage = index > 0 ? visibleMessages[index - 1] : null;
+
+    return (
+      <MessageComponent
+        key={getMessageKey(message)}
+        message={message}
+        prevMessage={prevMessage}
+        createDiff={createDiff}
+        onFileOpen={onFileOpen}
+        onShowSettings={onShowSettings}
+        onGrantToolPermission={onGrantToolPermission}
+        autoExpandTools={autoExpandTools}
+        showRawParameters={showRawParameters}
+        showThinking={showThinking}
+        selectedProject={selectedProject}
+        provider={provider}
+      />
+    );
+  }, [autoExpandTools, createDiff, getMessageKey, onFileOpen, onGrantToolPermission, onShowSettings, provider, selectedProject, showRawParameters, showThinking, visibleMessages]);
+
   return (
     <div
       ref={scrollContainerRef}
       onWheel={onWheel}
       onTouchMove={onTouchMove}
-      className="relative flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-0 py-3 sm:space-y-4 sm:p-4"
+      className="relative flex-1 overflow-y-auto overflow-x-hidden px-0 py-3 sm:p-4"
     >
       {isLoadingSessionMessages && chatMessages.length === 0 ? (
         <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
@@ -164,101 +231,110 @@ export default function ChatMessagesPane({
         />
       ) : (
         <>
-          {/* Loading indicator for older messages (hide when load-all is active) */}
-          {isLoadingMoreMessages && !isLoadingAllMessages && !allMessagesLoaded && (
-            <div className="py-3 text-center text-gray-500 dark:text-gray-400">
-              <div className="flex items-center justify-center space-x-2">
-                <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-gray-400" />
-                <p className="text-sm">{t('session.loading.olderMessages')}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Indicator showing there are more messages to load (hide when all loaded) */}
-          {hasMoreMessages && !isLoadingMoreMessages && !allMessagesLoaded && (
-            <div className="border-b border-gray-200 py-2 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              {totalMessages > 0 && (
-                <span>
-                  {t('session.messages.showingOf', { shown: sessionMessagesCount, total: totalMessages })}{' '}
-                  <span className="text-xs">{t('session.messages.scrollToLoad')}</span>
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Floating "Load all messages" overlay */}
-          {(showLoadAllOverlay || isLoadingAllMessages || loadAllJustFinished) && (
-            <div className="pointer-events-none sticky top-2 z-20 flex justify-center">
-              {loadAllJustFinished ? (
-                <div className="flex items-center space-x-2 rounded-full bg-green-600 px-4 py-1.5 text-xs font-medium text-white shadow-lg dark:bg-green-500">
-                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span>{t('session.messages.allLoaded')}</span>
+          <div ref={topContentRef}>
+            {/* Loading indicator for older messages (hide when load-all is active) */}
+            {isLoadingMoreMessages && !isLoadingAllMessages && !allMessagesLoaded && (
+              <div className="py-3 text-center text-gray-500 dark:text-gray-400">
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-gray-400" />
+                  <p className="text-sm">{t('session.loading.olderMessages')}</p>
                 </div>
-              ) : (
-                <button
-                  className="pointer-events-auto flex items-center space-x-2 rounded-full bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-lg transition-all duration-200 hover:scale-105 hover:bg-blue-700 disabled:cursor-wait disabled:opacity-75 dark:bg-blue-500 dark:hover:bg-blue-600"
-                  onClick={loadAllMessages}
-                  disabled={isLoadingAllMessages}
-                >
-                  {isLoadingAllMessages && (
-                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  )}
+              </div>
+            )}
+
+            {/* Indicator showing there are more messages to load (hide when all loaded) */}
+            {hasMoreMessages && !isLoadingMoreMessages && !allMessagesLoaded && (
+              <div className="border-b border-gray-200 py-2 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                {totalMessages > 0 && (
                   <span>
-                    {isLoadingAllMessages
-                      ? t('session.messages.loadingAll')
-                      : <>{t('session.messages.loadAll')} {totalMessages > 0 && `(${totalMessages})`}</>
-                    }
+                    {t('session.messages.showingOf', { shown: sessionMessagesCount, total: totalMessages })}{' '}
+                    <span className="text-xs">{t('session.messages.scrollToLoad')}</span>
                   </span>
+                )}
+              </div>
+            )}
+
+            {/* Floating "Load all messages" overlay */}
+            {(showLoadAllOverlay || isLoadingAllMessages || loadAllJustFinished) && (
+              <div className="pointer-events-none sticky top-2 z-20 flex justify-center">
+                {loadAllJustFinished ? (
+                  <div className="flex items-center space-x-2 rounded-full bg-green-600 px-4 py-1.5 text-xs font-medium text-white shadow-lg dark:bg-green-500">
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>{t('session.messages.allLoaded')}</span>
+                  </div>
+                ) : (
+                  <button
+                    className="pointer-events-auto flex items-center space-x-2 rounded-full bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-lg transition-all duration-200 hover:scale-105 hover:bg-blue-700 disabled:cursor-wait disabled:opacity-75 dark:bg-blue-500 dark:hover:bg-blue-600"
+                    onClick={loadAllMessages}
+                    disabled={isLoadingAllMessages}
+                  >
+                    {isLoadingAllMessages && (
+                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    )}
+                    <span>
+                      {isLoadingAllMessages
+                        ? t('session.messages.loadingAll')
+                        : <>{t('session.messages.loadAll')} {totalMessages > 0 && `(${totalMessages})`}</>
+                      }
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Performance warning when all messages are loaded */}
+            {allMessagesLoaded && (
+              <div className="border-b border-amber-200 bg-amber-50 py-1.5 text-center text-xs text-amber-600 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
+                {t('session.messages.perfWarning')}
+              </div>
+            )}
+
+            {/* Legacy message count indicator (for non-paginated view) */}
+            {!hasMoreMessages && chatMessages.length > visibleMessageCount && (
+              <div className="border-b border-gray-200 py-2 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                {t('session.messages.showingLast', { count: visibleMessageCount, total: chatMessages.length })} |
+                <button className="ml-1 text-blue-600 underline hover:text-blue-700" onClick={loadEarlierMessages}>
+                  {t('session.messages.loadEarlier')}
                 </button>
-              )}
+                {' | '}
+                <button
+                  className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                  onClick={loadAllMessages}
+                >
+                  {t('session.messages.loadAll')}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {shouldVirtualizeMessages ? (
+            <div className="relative w-full" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+              {virtualItems.map((virtualItem) => {
+                const message = visibleMessages[virtualItem.index];
+                if (!message) {
+                  return null;
+                }
+
+                return (
+                  <div
+                    key={virtualItem.key}
+                    ref={rowVirtualizer.measureElement}
+                    data-index={virtualItem.index}
+                    className="absolute left-0 top-0 w-full pb-3 sm:pb-4"
+                    style={{ transform: `translateY(${virtualItem.start - topContentHeight}px)` }}
+                  >
+                    {renderMessage(message, virtualItem.index)}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-3 sm:space-y-4">
+              {visibleMessages.map((message, index) => renderMessage(message, index))}
             </div>
           )}
-
-          {/* Performance warning when all messages are loaded */}
-          {allMessagesLoaded && (
-            <div className="border-b border-amber-200 bg-amber-50 py-1.5 text-center text-xs text-amber-600 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
-              {t('session.messages.perfWarning')}
-            </div>
-          )}
-
-          {/* Legacy message count indicator (for non-paginated view) */}
-          {!hasMoreMessages && chatMessages.length > visibleMessageCount && (
-            <div className="border-b border-gray-200 py-2 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              {t('session.messages.showingLast', { count: visibleMessageCount, total: chatMessages.length })} |
-              <button className="ml-1 text-blue-600 underline hover:text-blue-700" onClick={loadEarlierMessages}>
-                {t('session.messages.loadEarlier')}
-              </button>
-              {' | '}
-              <button
-                className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                onClick={loadAllMessages}
-              >
-                {t('session.messages.loadAll')}
-              </button>
-            </div>
-          )}
-
-          {visibleMessages.map((message, index) => {
-            const prevMessage = index > 0 ? visibleMessages[index - 1] : null;
-            return (
-              <MessageComponent
-                key={getMessageKey(message)}
-                message={message}
-                prevMessage={prevMessage}
-                createDiff={createDiff}
-                onFileOpen={onFileOpen}
-                onShowSettings={onShowSettings}
-                onGrantToolPermission={onGrantToolPermission}
-                autoExpandTools={autoExpandTools}
-                showRawParameters={showRawParameters}
-                showThinking={showThinking}
-                selectedProject={selectedProject}
-                provider={provider}
-              />
-            );
-          })}
         </>
       )}
 
@@ -266,4 +342,3 @@ export default function ChatMessagesPane({
     </div>
   );
 }
-

@@ -25,6 +25,7 @@ export type SidebarProps = {
   projects: Project[];
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
+  processingSessions: Set<string>;
   onProjectSelect: (project: Project) => void;
   onSessionSelect: (session: ProjectSession) => void;
   onNewSession: (project: Project) => void;
@@ -45,6 +46,7 @@ export type SessionViewModel = {
   isCodexSession: boolean;
   isGeminiSession: boolean;
   isActive: boolean;
+  isRecent: boolean;
   sessionName: string;
   sessionTime: string;
   messageCount: number;

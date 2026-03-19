@@ -14,6 +14,7 @@ export type SidebarProjectListProps = {
   filteredProjects: Project[];
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
+  processingSessions: Set<string>;
   isLoading: boolean;
   loadingProgress: LoadingProgress | null;
   expandedProjects: Set<string>;
@@ -58,6 +59,7 @@ export default function SidebarProjectList({
   filteredProjects,
   selectedProject,
   selectedSession,
+  processingSessions,
   isLoading,
   loadingProgress,
   expandedProjects,
@@ -122,6 +124,7 @@ export default function SidebarProjectList({
               project={project}
               selectedProject={selectedProject}
               selectedSession={selectedSession}
+              processingSessions={processingSessions}
               isExpanded={expandedProjects.has(project.name)}
               isDeleting={deletingProjects.has(project.name)}
               isStarred={isProjectStarred(project.name)}

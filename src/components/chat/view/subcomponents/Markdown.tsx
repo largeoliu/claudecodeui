@@ -3,11 +3,10 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTranslation } from 'react-i18next';
 import { normalizeInlineCodeFences } from '../../utils/chatFormatting';
 import { copyTextToClipboard } from '../../../../utils/clipboard';
+import { normalizeCodeLanguage, prismOneDark, SyntaxHighlighter } from '../../../../utils/prismHighlighter';
 
 type MarkdownProps = {
   children: React.ReactNode;
@@ -42,7 +41,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
   }
 
   const match = /language-(\w+)/.exec(className || '');
-  const language = match ? match[1] : 'text';
+  const language = normalizeCodeLanguage(match ? match[1] : 'text');
 
   return (
     <div className="group relative my-2">
@@ -94,10 +93,10 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
         )}
       </button>
 
-      <SyntaxHighlighter
-        language={language}
-        style={oneDark}
-        customStyle={{
+        <SyntaxHighlighter
+          language={language}
+          style={prismOneDark}
+          customStyle={{
           margin: 0,
           borderRadius: '0.5rem',
           fontSize: '0.875rem',

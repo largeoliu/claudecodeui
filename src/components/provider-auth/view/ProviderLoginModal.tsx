@@ -1,7 +1,9 @@
+import { Suspense, lazy } from 'react';
 import { ExternalLink, KeyRound, X } from 'lucide-react';
-import StandaloneShell from '../../standalone-shell/view/StandaloneShell';
 import { IS_PLATFORM } from '../../../constants/config';
 import type { CliProvider } from '../types';
+
+const StandaloneShell = lazy(() => import('../../standalone-shell/view/StandaloneShell'));
 
 type LoginModalProject = {
   name?: string;
@@ -161,7 +163,9 @@ export default function ProviderLoginModal({
               </button>
             </div>
           ) : (
-            <StandaloneShell project={shellProject} command={command} onComplete={handleComplete} minimal={true} />
+            <Suspense fallback={<div className="h-full w-full animate-pulse bg-gray-50 dark:bg-gray-900/50" />}>
+              <StandaloneShell project={shellProject} command={command} onComplete={handleComplete} minimal={true} />
+            </Suspense>
           )}
         </div>
       </div>

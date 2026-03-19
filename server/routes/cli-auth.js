@@ -375,7 +375,14 @@ async function checkGeminiCredentials() {
 
       try {
         // Validate token against Google API
-        const tokenRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${creds.access_token}`);
+        const ac = new AbortController();
+        const timeout = setTimeout(() => ac.abort(), 10_000);
+        let tokenRes;
+        try {
+          tokenRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${creds.access_token}`, { signal: ac.signal });
+        } finally {
+          clearTimeout(timeout);
+        }
         if (tokenRes.ok) {
           const tokenInfo = await tokenRes.json();
           if (tokenInfo.email) {

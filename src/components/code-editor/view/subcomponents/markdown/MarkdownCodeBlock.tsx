@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import type { ComponentProps } from 'react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark as prismOneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { copyTextToClipboard } from '../../../../../utils/clipboard';
+import { normalizeCodeLanguage, prismOneDark, SyntaxHighlighter } from '../../../../../utils/prismHighlighter';
 
 type MarkdownCodeBlockProps = {
   inline?: boolean;
@@ -33,7 +32,7 @@ export default function MarkdownCodeBlock({
   }
 
   const languageMatch = /language-(\w+)/.exec(className || '');
-  const language = languageMatch ? languageMatch[1] : 'text';
+  const language = normalizeCodeLanguage(languageMatch ? languageMatch[1] : 'text');
 
   return (
     <div className="group relative my-2">

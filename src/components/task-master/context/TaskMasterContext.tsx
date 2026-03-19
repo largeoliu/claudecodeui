@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../utils/api';
 import { useAuth } from '../../auth/context/AuthContext';
-import { useWebSocket } from '../../../contexts/WebSocketContext';
+import { useWebSocketMessageEffect } from '../../../contexts/WebSocketContext';
 import type {
   TaskMasterContextError,
   TaskMasterContextValue,
@@ -57,7 +57,6 @@ export function useTaskMaster() {
 }
 
 export function TaskMasterProvider({ children }: { children: React.ReactNode }) {
-  const { latestMessage } = useWebSocket();
   const { user, token, isLoading: isAuthLoading } = useAuth();
 
   const [projects, setProjects] = useState<TaskMasterProject[]>([]);
@@ -209,26 +208,24 @@ export function TaskMasterProvider({ children }: { children: React.ReactNode }) 
     }
   }, [currentProject?.name, refreshTasks, token, user]);
 
-  useEffect(() => {
-    const message = latestMessage as TaskMasterWebSocketMessage | null;
-    if (!isTaskMasterMessage(message)) {
-      return;
-    }
+  useWebSocketMessageEffect<TaskMasterWebSocketMessage>(
+    (message) => {
+      if (message.type === 'taskmaster-project-updated' && message.projectName) {
+        void refreshProjects();
+        return;
+      }
 
-    if (message.type === 'taskmaster-project-updated' && message.projectName) {
-      void refreshProjects();
-      return;
-    }
+      if (message.type === 'taskmaster-tasks-updated' && message.projectName === currentProject?.name) {
+        void refreshTasks();
+        return;
+      }
 
-    if (message.type === 'taskmaster-tasks-updated' && message.projectName === currentProject?.name) {
-      void refreshTasks();
-      return;
-    }
-
-    if (message.type === 'taskmaster-mcp-status-changed') {
-      void refreshMCPStatus();
-    }
-  }, [currentProject?.name, latestMessage, refreshMCPStatus, refreshProjects, refreshTasks]);
+      if (message.type === 'taskmaster-mcp-status-changed') {
+        void refreshMCPStatus();
+      }
+    },
+    isTaskMasterMessage,
+  );
 
   const contextValue = useMemo<TaskMasterContextValue>(
     () => ({

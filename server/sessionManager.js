@@ -4,10 +4,10 @@ import os from 'os';
 
 class SessionManager {
   constructor() {
-    // Store sessions in memory with conversation history
     this.sessions = new Map();
     this.maxSessions = 100;
     this.sessionsDir = path.join(os.homedir(), '.gemini', 'sessions');
+    this._writeQueues = new Map();
     this.ready = this.init();
   }
 
@@ -20,7 +20,7 @@ class SessionManager {
     try {
       await fs.mkdir(this.sessionsDir, { recursive: true });
     } catch (error) {
-      // console.error('Error creating sessions directory:', error);
+      console.warn('[SessionManager] Failed to create sessions directory:', error.message);
     }
   }
 
@@ -142,17 +142,31 @@ class SessionManager {
     return path.join(this.sessionsDir, `${safeId}.json`);
   }
 
-  // Save session to disk
   async saveSession(sessionId) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    try {
-      const filePath = this._safeFilePath(sessionId);
-      await fs.writeFile(filePath, JSON.stringify(session, null, 2));
-    } catch (error) {
-      // console.error('Error saving session:', error);
+    if (!this._writeQueues.has(sessionId)) {
+      this._writeQueues.set(sessionId, Promise.resolve());
     }
+    const queue = this._writeQueues.get(sessionId);
+
+    const writeTask = queue.then(async () => {
+      try {
+        const filePath = this._safeFilePath(sessionId);
+        const tmpPath = filePath + '.tmp';
+        await fs.writeFile(tmpPath, JSON.stringify(session, null, 2), 'utf8');
+        await fs.rename(tmpPath, filePath);
+      } catch (error) {
+        console.error(`[SessionManager] Failed to save session ${sessionId}:`, error.message);
+      } finally {
+        if (this._writeQueues.get(sessionId) === writeTask) {
+          this._writeQueues.delete(sessionId);
+        }
+      }
+    });
+
+    this._writeQueues.set(sessionId, writeTask);
   }
 
   // Load sessions from disk
@@ -176,7 +190,7 @@ class SessionManager {
 
             this.sessions.set(session.id, session);
           } catch (error) {
-            // console.error(`Error loading session ${file}:`, error);
+            console.warn(`[SessionManager] Skipping corrupt session file ${file}:`, error.message);
           }
         }
       }

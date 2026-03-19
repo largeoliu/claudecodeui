@@ -250,6 +250,7 @@ router.all('/:name/rpc/*', async (req, res) => {
     path: `/${rpcPath}${qs}`,
     method: req.method,
     headers,
+    timeout: 30_000,
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
@@ -257,17 +258,52 @@ router.all('/:name/rpc/*', async (req, res) => {
     proxyRes.pipe(res);
   });
 
-  proxyReq.on('error', (err) => {
-    if (!res.headersSent) {
-      res.status(502).json({ error: 'Plugin server error', details: err.message });
-    } else {
-      res.end();
+  let settled = false;
+  const settle = (status, body) => {
+    if (settled || res.headersSent) return;
+    settled = true;
+    clearTimeout(proxyTimer);
+    clearTimeout(reqTimer);
+    proxyReq.destroy();
+    res.status(status).json(body);
+  };
+
+  const proxyTimer = setTimeout(() => {
+    console.warn(`[Plugins] Proxy to ${pluginName} timed out`);
+    settle(504, { error: 'Plugin server timed out' });
+  }, 30_000);
+
+  const reqTimer = setTimeout(() => {
+    console.warn(`[Plugins] Upstream plugin ${pluginName} did not respond in time`);
+    settle(504, { error: 'Plugin server timeout' });
+  }, 30_000);
+
+  req.on('close', () => {
+    if (!settled) {
+      settled = true;
+      clearTimeout(proxyTimer);
+      clearTimeout(reqTimer);
+      proxyReq.destroy();
     }
   });
 
-  // Forward body (already parsed by express JSON middleware, so re-stringify).
-  // Check content-length to detect whether a body was actually sent, since
-  // req.body can be falsy for valid payloads like 0, false, null, or {}.
+  res.on('close', () => {
+    if (!settled) {
+      settled = true;
+      clearTimeout(proxyTimer);
+      clearTimeout(reqTimer);
+      proxyReq.destroy();
+    }
+  });
+
+  proxyReq.on('error', (err) => {
+    settle(502, { error: 'Plugin server error', details: err.message });
+  });
+
+  proxyReq.on('timeout', () => {
+    settle(504, { error: 'Plugin server connection timed out' });
+  });
+
   const hasBody = req.headers['content-length'] && parseInt(req.headers['content-length'], 10) > 0;
   if (hasBody && req.body !== undefined) {
     const bodyStr = JSON.stringify(req.body);

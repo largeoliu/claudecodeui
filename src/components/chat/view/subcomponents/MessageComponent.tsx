@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
 import type {
@@ -6,13 +6,23 @@ import type {
   ClaudePermissionSuggestion,
   PermissionGrantResult,
   Provider,
+  SubagentChildTool,
 } from '../../types/types';
 import { formatUsageLimitText } from '../../utils/chatFormatting';
 import { getClaudePermissionSuggestion } from '../../utils/chatPermissions';
 import type { Project } from '../../../../types/app';
-import { ToolRenderer, shouldHideToolResult } from '../../tools';
-import { Markdown } from './Markdown';
+import { shouldHideToolResult } from '../../tools/configs/toolConfigs';
 import MessageCopyControl from './MessageCopyControl';
+
+const LazyMarkdown = lazy(async () => {
+  const module = await import('./Markdown');
+  return { default: module.Markdown };
+});
+
+const LazyToolRenderer = lazy(async () => {
+  const module = await import('../../tools/ToolRenderer');
+  return { default: module.ToolRenderer };
+});
 
 type DiffLine = {
   type: string;
@@ -42,6 +52,63 @@ type InteractiveOption = {
 
 type PermissionGrantState = 'idle' | 'granted' | 'error';
 const COPY_HIDDEN_TOOL_NAMES = new Set(['Bash', 'Edit', 'Write', 'ApplyPatch']);
+
+type DeferredMarkdownProps = {
+  children: React.ReactNode;
+  className?: string;
+};
+
+type DeferredToolRendererProps = {
+  toolName: string;
+  toolInput: unknown;
+  toolResult?: unknown;
+  toolId?: string;
+  mode: 'input' | 'result';
+  onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
+  createDiff: (oldStr: string, newStr: string) => DiffLine[];
+  selectedProject?: Project | null;
+  autoExpandTools?: boolean;
+  showRawParameters?: boolean;
+  rawToolInput?: string;
+  isSubagentContainer?: boolean;
+  subagentState?: {
+    childTools: SubagentChildTool[];
+    currentToolIndex: number;
+    isComplete: boolean;
+  };
+};
+
+function MarkdownFallback({ children, className }: DeferredMarkdownProps) {
+  return (
+    <div className={className}>
+      <div className="whitespace-pre-wrap break-words">{String(children ?? '')}</div>
+    </div>
+  );
+}
+
+function DeferredMarkdown({ children, className }: DeferredMarkdownProps) {
+  return (
+    <Suspense fallback={<MarkdownFallback className={className}>{children}</MarkdownFallback>}>
+      <LazyMarkdown className={className}>{children}</LazyMarkdown>
+    </Suspense>
+  );
+}
+
+function ToolRendererFallback({ mode }: Pick<DeferredToolRendererProps, 'mode'>) {
+  if (mode === 'result') {
+    return null;
+  }
+
+  return <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">Loading tool details...</div>;
+}
+
+function DeferredToolRenderer(props: DeferredToolRendererProps) {
+  return (
+    <Suspense fallback={<ToolRendererFallback mode={props.mode} />}>
+      <LazyToolRenderer {...props} />
+    </Suspense>
+  );
+}
 
 const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, onShowSettings, onGrantToolPermission, autoExpandTools, showRawParameters, showThinking, selectedProject, provider }: MessageComponentProps) => {
   const { t } = useTranslation('chat');
@@ -185,14 +252,14 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
               <>
                 <div className="flex flex-col">
                   <div className="flex flex-col">
-                    <Markdown className="prose prose-sm max-w-none dark:prose-invert">
+                    <DeferredMarkdown className="prose prose-sm max-w-none dark:prose-invert">
                       {String(message.displayText || '')}
-                    </Markdown>
+                    </DeferredMarkdown>
                   </div>
                 </div>
 
                 {message.toolInput && (
-                  <ToolRenderer
+                  <DeferredToolRenderer
                     toolName={message.toolName || 'UnknownTool'}
                     toolInput={message.toolInput}
                     toolResult={message.toolResult}
@@ -224,9 +291,9 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                         <span className="text-xs font-medium text-red-700 dark:text-red-300">{t('messageTypes.error')}</span>
                       </div>
                       <div className="relative text-sm text-red-900 dark:text-red-100">
-                        <Markdown className="prose prose-sm prose-red max-w-none dark:prose-invert">
+                        <DeferredMarkdown className="prose prose-sm prose-red max-w-none dark:prose-invert">
                           {String(message.toolResult.content || '')}
-                        </Markdown>
+                        </DeferredMarkdown>
                         {permissionSuggestion && (
                           <div className="mt-4 border-t border-red-200/60 pt-3 dark:border-red-800/60">
                             <div className="flex flex-wrap items-center gap-2">
@@ -281,7 +348,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                   ) : (
                     // Non-error results - route through ToolRenderer (single source of truth)
                     <div id={`tool-result-${message.toolId}`} className="scroll-mt-4">
-                      <ToolRenderer
+                      <DeferredToolRenderer
                         toolName={message.toolName || 'UnknownTool'}
                         toolInput={message.toolInput}
                         toolResult={message.toolResult}
@@ -388,9 +455,9 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                     <span>{t('thinking.emoji')}</span>
                   </summary>
                   <div className="mt-2 border-l-2 border-gray-300 pl-4 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
-                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
+                    <DeferredMarkdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
                       {message.content}
-                    </Markdown>
+                    </DeferredMarkdown>
                   </div>
                 </details>
               </div>
@@ -445,9 +512,9 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
 
                   // Normal rendering for non-JSON content
                   return message.type === 'assistant' ? (
-                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
+                    <DeferredMarkdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
                       {content}
-                    </Markdown>
+                    </DeferredMarkdown>
                   ) : (
                     <div className="whitespace-pre-wrap">
                       {content}
@@ -473,4 +540,3 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
 });
 
 export default MessageComponent;
-

@@ -12,6 +12,7 @@ import type {
   TouchEvent,
 } from 'react';
 import MicButton from '../../../mic-button/view/MicButton';
+import type { CodexReasoningEffort } from '../../constants/codexReasoningEfforts';
 import type { PendingPermissionRequest, PermissionMode, Provider } from '../../types/types';
 import CommandMenu from './CommandMenu';
 import ClaudeStatus from './ClaudeStatus';
@@ -49,6 +50,8 @@ interface ChatComposerProps {
   onModeSwitch: () => void;
   thinkingMode: string;
   setThinkingMode: Dispatch<SetStateAction<string>>;
+  codexReasoningEffort: CodexReasoningEffort;
+  setCodexReasoningEffort: (effort: CodexReasoningEffort) => void;
   tokenBudget: { used?: number; total?: number } | null;
   slashCommandsCount: number;
   onToggleCommandMenu: () => void;
@@ -106,6 +109,8 @@ export default function ChatComposer({
   onModeSwitch,
   thinkingMode,
   setThinkingMode,
+  codexReasoningEffort,
+  setCodexReasoningEffort,
   tokenBudget,
   slashCommandsCount,
   onToggleCommandMenu,
@@ -194,6 +199,8 @@ export default function ChatComposer({
           provider={provider}
           thinkingMode={thinkingMode}
           setThinkingMode={setThinkingMode}
+          codexReasoningEffort={codexReasoningEffort}
+          setCodexReasoningEffort={setCodexReasoningEffort}
           tokenBudget={tokenBudget}
           slashCommandsCount={slashCommandsCount}
           onToggleCommandMenu={onToggleCommandMenu}
@@ -327,7 +334,7 @@ export default function ChatComposer({
 
             <button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={(!input.trim() && attachedImages.length === 0) || isLoading}
               onMouseDown={(event) => {
                 event.preventDefault();
                 onSubmit(event);

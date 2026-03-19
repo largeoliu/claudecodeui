@@ -554,9 +554,8 @@
 }
 
 /* Mobile optimizations and components */
-@layer components {
-  /* Mobile touch optimization and safe areas */
-  @media (max-width: 768px) {
+/* Mobile touch optimization and safe areas */
+@media (max-width: 768px) {
     * {
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
@@ -587,26 +586,36 @@
     
     /* Better mobile touch targets */
     .mobile-touch-target {
-      @apply min-h-[44px] min-w-[44px];
+      min-height: 44px;
+      min-width: 44px;
     }
     
     /* Chat message improvements */
     .chat-message.user {
-      @apply justify-end;
+      justify-content: flex-end;
     }
     
     .chat-message.user > div {
-      @apply max-w-[85%];
+      max-width: 85%;
     }
     
     .chat-message.assistant > div,
     .chat-message.error > div {
-      @apply w-full sm:max-w-[95%];
+      width: 100%;
+    }
+
+    @media (min-width: 640px) {
+      .chat-message.assistant > div,
+      .chat-message.error > div {
+        max-width: 95%;
+      }
     }
     
     /* Session name truncation on mobile */
     .session-name-mobile {
-      @apply truncate;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       max-width: calc(100vw - 120px); /* Account for sidebar padding and buttons */
     }
     
@@ -647,10 +656,10 @@
         background-color: inherit;
       }
     }
-  }
-  
-  /* Touch device optimizations for all screen sizes */
-  @media (hover: none) and (pointer: coarse) {
+}
+
+/* Touch device optimizations for all screen sizes */
+@media (hover: none) and (pointer: coarse) {
     .touch\:opacity-100 {
       opacity: 1 !important;
     }
@@ -692,67 +701,66 @@
     .active\:scale-95:active {
       transform: scale(0.98) !important;
     }
-  }
-  
-  /* Safe area support for iOS devices */
-  .ios-bottom-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  
-  /* PWA specific header adjustments - uses CSS variables for consistency */
-  .pwa-header-safe {
-    padding-top: var(--header-base-padding);
-  }
+}
 
-  /* When PWA mode is detected by JavaScript */
+/* Safe area support for iOS devices */
+.ios-bottom-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* PWA specific header adjustments - uses CSS variables for consistency */
+.pwa-header-safe {
+  padding-top: var(--header-base-padding);
+}
+
+/* When PWA mode is detected by JavaScript */
+body.pwa-mode .pwa-header-safe {
+  /* Reset padding since #root already handles safe area */
+  padding-top: 0px !important;
+}
+
+/* For mobile PWA, add bottom padding for better spacing */
+@media screen and (max-width: 768px) {
   body.pwa-mode .pwa-header-safe {
-    /* Reset padding since #root already handles safe area */
-    padding-top: 0px !important;
+    padding-bottom: 8px;
   }
+}
 
-  /* For mobile PWA, add bottom padding for better spacing */
-  @media screen and (max-width: 768px) {
-    body.pwa-mode .pwa-header-safe {
-      padding-bottom: 8px;
-    }
+@media screen and (max-width: 768px) {
+  .chat-input-mobile {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
   }
-  
-  @media screen and (max-width: 768px) {
-    .chat-input-mobile {
-      padding-bottom: calc(60px + env(safe-area-inset-bottom));
-    }
-  }
+}
 
-  /* Text wrapping improvements */
-  .chat-message {
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    hyphens: auto;
-  }
+/* Text wrapping improvements */
+.chat-message {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
 
-  /* Force wrap long URLs and code */
-  .chat-message pre,
-  .chat-message code {
-    white-space: pre-wrap !important;
-    word-break: break-all;
-    overflow-wrap: break-word;
-  }
+/* Force wrap long URLs and code */
+.chat-message pre,
+.chat-message code {
+  white-space: pre-wrap !important;
+  word-break: break-all;
+  overflow-wrap: break-word;
+}
 
-  /* Prevent horizontal scroll in chat area */
-  .chat-message * {
-    max-width: 100%;
-    box-sizing: border-box;
-  }
+/* Prevent horizontal scroll in chat area */
+.chat-message * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
 
-  /* Hide scrollbar utility for horizontal scroll */
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
+/* Hide scrollbar utility for horizontal scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
 
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 /* Hide markdown backticks in prose content */

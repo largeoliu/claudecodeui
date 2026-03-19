@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
+import { useWebSocketMessageEffect } from '../contexts/WebSocketContext';
 import { api } from '../utils/api';
 import type {
   AppSocketMessage,
@@ -13,7 +14,6 @@ import type {
 type UseProjectsStateArgs = {
   sessionId?: string;
   navigate: NavigateFunction;
-  latestMessage: AppSocketMessage | null;
   isMobile: boolean;
   activeSessions: Set<string>;
 };
@@ -129,7 +129,6 @@ const readPersistedTab = (): AppTab => {
 export function useProjectsState({
   sessionId,
   navigate,
-  latestMessage,
   isMobile,
   activeSessions,
 }: UseProjectsStateArgs) {
@@ -203,96 +202,91 @@ export function useProjectsState({
     }
   }, [isLoadingProjects, projects, selectedProject, sessionId]);
 
-  useEffect(() => {
-    if (!latestMessage) {
-      return;
-    }
-
-    if (latestMessage.type === 'loading_progress') {
-      if (loadingProgressTimeoutRef.current) {
-        clearTimeout(loadingProgressTimeoutRef.current);
-        loadingProgressTimeoutRef.current = null;
-      }
-
-      setLoadingProgress(latestMessage as LoadingProgress);
-
-      if (latestMessage.phase === 'complete') {
-        loadingProgressTimeoutRef.current = setTimeout(() => {
-          setLoadingProgress(null);
+  useWebSocketMessageEffect<AppSocketMessage>(
+    (message) => {
+      if (message.type === 'loading_progress') {
+        if (loadingProgressTimeoutRef.current) {
+          clearTimeout(loadingProgressTimeoutRef.current);
           loadingProgressTimeoutRef.current = null;
-        }, 500);
+        }
+
+        setLoadingProgress(message as LoadingProgress);
+
+        if (message.phase === 'complete') {
+          loadingProgressTimeoutRef.current = setTimeout(() => {
+            setLoadingProgress(null);
+            loadingProgressTimeoutRef.current = null;
+          }, 500);
+        }
+
+        return;
       }
 
-      return;
-    }
+      const projectsMessage = message as ProjectsUpdatedMessage;
 
-    if (latestMessage.type !== 'projects_updated') {
-      return;
-    }
+      if (projectsMessage.changedFile && selectedSession && selectedProject) {
+        const normalized = projectsMessage.changedFile.replace(/\\/g, '/');
+        const changedFileParts = normalized.split('/');
 
-    const projectsMessage = latestMessage as ProjectsUpdatedMessage;
+        if (changedFileParts.length >= 2) {
+          const filename = changedFileParts[changedFileParts.length - 1];
+          const changedSessionId = filename.replace('.jsonl', '');
 
-    if (projectsMessage.changedFile && selectedSession && selectedProject) {
-      const normalized = projectsMessage.changedFile.replace(/\\/g, '/');
-      const changedFileParts = normalized.split('/');
+          if (changedSessionId === selectedSession.id) {
+            const isSessionActive = activeSessions.has(selectedSession.id);
 
-      if (changedFileParts.length >= 2) {
-        const filename = changedFileParts[changedFileParts.length - 1];
-        const changedSessionId = filename.replace('.jsonl', '');
-
-        if (changedSessionId === selectedSession.id) {
-          const isSessionActive = activeSessions.has(selectedSession.id);
-
-          if (!isSessionActive) {
-            setExternalMessageUpdate((prev) => prev + 1);
+            if (!isSessionActive) {
+              setExternalMessageUpdate((prev) => prev + 1);
+            }
           }
         }
       }
-    }
 
-    const hasActiveSession =
-      (selectedSession && activeSessions.has(selectedSession.id)) ||
-      (activeSessions.size > 0 && Array.from(activeSessions).some((id) => id.startsWith('new-session-')));
+      const hasActiveSession =
+        (selectedSession && activeSessions.has(selectedSession.id)) ||
+        (activeSessions.size > 0 && Array.from(activeSessions).some((id) => id.startsWith('new-session-')));
 
-    const updatedProjects = projectsMessage.projects;
+      const updatedProjects = projectsMessage.projects;
 
-    if (
-      hasActiveSession &&
-      !isUpdateAdditive(projects, updatedProjects, selectedProject, selectedSession)
-    ) {
-      return;
-    }
+      if (
+        hasActiveSession &&
+        !isUpdateAdditive(projects, updatedProjects, selectedProject, selectedSession)
+      ) {
+        return;
+      }
 
-    setProjects(updatedProjects);
+      setProjects(updatedProjects);
 
-    if (!selectedProject) {
-      return;
-    }
+      if (!selectedProject) {
+        return;
+      }
 
-    const updatedSelectedProject = updatedProjects.find(
-      (project) => project.name === selectedProject.name,
-    );
+      const updatedSelectedProject = updatedProjects.find(
+        (project) => project.name === selectedProject.name,
+      );
 
-    if (!updatedSelectedProject) {
-      return;
-    }
+      if (!updatedSelectedProject) {
+        return;
+      }
 
-    if (serialize(updatedSelectedProject) !== serialize(selectedProject)) {
-      setSelectedProject(updatedSelectedProject);
-    }
+      if (serialize(updatedSelectedProject) !== serialize(selectedProject)) {
+        setSelectedProject(updatedSelectedProject);
+      }
 
-    if (!selectedSession) {
-      return;
-    }
+      if (!selectedSession) {
+        return;
+      }
 
-    const updatedSelectedSession = getProjectSessions(updatedSelectedProject).find(
-      (session) => session.id === selectedSession.id,
-    );
+      const updatedSelectedSession = getProjectSessions(updatedSelectedProject).find(
+        (session) => session.id === selectedSession.id,
+      );
 
-    if (!updatedSelectedSession) {
-      setSelectedSession(null);
-    }
-  }, [latestMessage, selectedProject, selectedSession, activeSessions, projects]);
+      if (!updatedSelectedSession) {
+        setSelectedSession(null);
+      }
+    },
+    (message) => message.type === 'loading_progress' || message.type === 'projects_updated',
+  );
 
   useEffect(() => {
     return () => {

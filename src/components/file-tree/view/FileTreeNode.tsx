@@ -10,6 +10,7 @@ type FileTreeNodeProps = {
   level: number;
   viewMode: FileTreeViewMode;
   expandedDirs: Set<string>;
+  renderChildren?: boolean;
   onItemClick: (item: FileTreeNodeType) => void;
   renderFileIcon: (filename: string) => ReactNode;
   formatFileSize: (bytes?: number) => string;
@@ -64,6 +65,7 @@ export default function FileTreeNode({
   level,
   viewMode,
   expandedDirs,
+  renderChildren = true,
   onItemClick,
   renderFileIcon,
   formatFileSize,
@@ -199,7 +201,7 @@ export default function FileTreeNode({
         rowContent
       )}
 
-      {isDirectory && isOpen && hasChildren && (
+      {renderChildren && isDirectory && isOpen && hasChildren && (
         <div className="relative">
           <span
             className="absolute bottom-0 top-0 border-l border-border/40"
@@ -213,6 +215,7 @@ export default function FileTreeNode({
               level={level + 1}
               viewMode={viewMode}
               expandedDirs={expandedDirs}
+              renderChildren={renderChildren}
               onItemClick={onItemClick}
               renderFileIcon={renderFileIcon}
               formatFileSize={formatFileSize}

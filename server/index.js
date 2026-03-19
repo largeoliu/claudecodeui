@@ -1601,8 +1601,16 @@ function handleChatConnection(ws, request) {
 
     ws.on('close', () => {
         console.log('🔌 Chat client disconnected');
-        // Remove from connected clients
         connectedClients.delete(ws);
+        if (writer && typeof writer.isDead !== 'undefined') {
+            writer.isDead = true;
+        }
+    });
+
+    ws.on('error', () => {
+        if (writer && typeof writer.isDead !== 'undefined') {
+            writer.isDead = true;
+        }
     });
 }
 
@@ -1998,14 +2006,22 @@ app.post('/api/transcribe', authenticateToken, async (req, res) => {
                 formData.append('language', 'en');
 
                 // Make request to OpenAI
-                const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        ...formData.getHeaders()
-                    },
-                    body: formData
-                });
+                const ac = new AbortController();
+                const timeout = setTimeout(() => ac.abort(), 15_000);
+                let response;
+                try {
+                    response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`,
+                            ...formData.getHeaders()
+                        },
+                        body: formData,
+                        signal: ac.signal,
+                    });
+                } finally {
+                    clearTimeout(timeout);
+                }
 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));

@@ -31,6 +31,7 @@ export default function FileTree({ selectedProject, onFileOpen }: FileTreeProps)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const newItemInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
 
   // Show toast notification
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
@@ -154,7 +155,7 @@ export default function FileTree({ selectedProject, onFileOpen }: FileTreeProps)
 
       {viewMode === 'detailed' && filteredFiles.length > 0 && <FileTreeDetailedColumns />}
 
-      <ScrollArea className="flex-1 px-2 py-1">
+      <ScrollArea ref={scrollViewportRef} className="flex-1 px-2 py-1">
         {/* New item input */}
         {operations.isCreating && (
           <div
@@ -192,6 +193,7 @@ export default function FileTree({ selectedProject, onFileOpen }: FileTreeProps)
           filteredFiles={filteredFiles}
           searchQuery={searchQuery}
           viewMode={viewMode}
+          scrollContainerRef={scrollViewportRef}
           expandedDirs={expandedDirs}
           onItemClick={handleItemClick}
           renderFileIcon={renderFileIcon}

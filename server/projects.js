@@ -1653,23 +1653,146 @@ async function parseCodexSessionFile(filePath) {
   }
 }
 
+function createCodexTurnTimeline() {
+  return {
+    startTimestamp: null,
+    userTimestamps: [],
+    assistantTimestamps: [],
+    reasoningTimestamps: [],
+  };
+}
+
+function getOrCreateCodexTurnTimeline(turnTimelines, turnId) {
+  if (!turnId) {
+    return null;
+  }
+
+  if (!turnTimelines.has(turnId)) {
+    turnTimelines.set(turnId, createCodexTurnTimeline());
+  }
+
+  return turnTimelines.get(turnId);
+}
+
+async function extractCodexTurnTimelinesFromRollout(rolloutPath) {
+  const turnTimelines = new Map();
+
+  if (!rolloutPath) {
+    return turnTimelines;
+  }
+
+  try {
+    const content = await fs.readFile(rolloutPath, 'utf8');
+    let currentTurnId = null;
+
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      try {
+        const entry = JSON.parse(trimmed);
+        const timestamp = entry.timestamp;
+        const payload = entry.payload;
+        if (!timestamp || !payload) {
+          continue;
+        }
+
+        if (entry.type === 'event_msg' && payload.type === 'task_started' && payload.turn_id) {
+          currentTurnId = payload.turn_id;
+          const turnTimeline = getOrCreateCodexTurnTimeline(turnTimelines, currentTurnId);
+          if (turnTimeline && !turnTimeline.startTimestamp) {
+            turnTimeline.startTimestamp = timestamp;
+          }
+          continue;
+        }
+
+        if (entry.type === 'turn_context' && payload.turn_id) {
+          currentTurnId = payload.turn_id;
+          const turnTimeline = getOrCreateCodexTurnTimeline(turnTimelines, currentTurnId);
+          if (turnTimeline && !turnTimeline.startTimestamp) {
+            turnTimeline.startTimestamp = timestamp;
+          }
+          continue;
+        }
+
+        if (!currentTurnId) {
+          continue;
+        }
+
+        const turnTimeline = getOrCreateCodexTurnTimeline(turnTimelines, currentTurnId);
+        if (!turnTimeline) {
+          continue;
+        }
+
+        if (entry.type === 'event_msg' && isVisibleCodexUserMessage(payload)) {
+          turnTimeline.userTimestamps.push(timestamp);
+          continue;
+        }
+
+        if (entry.type === 'event_msg' && payload.type === 'agent_message') {
+          turnTimeline.assistantTimestamps.push(timestamp);
+          continue;
+        }
+
+        if (entry.type === 'response_item' && payload.type === 'reasoning') {
+          turnTimeline.reasoningTimestamps.push(timestamp);
+        }
+      } catch {
+        // Skip malformed rollout entries.
+      }
+    }
+
+    return turnTimelines;
+  } catch {
+    return turnTimelines;
+  }
+}
+
+function createCodexTurnTimestampCursor(turnTimeline) {
+  const userTimestamps = [...(turnTimeline?.userTimestamps || [])];
+  const assistantTimestamps = [...(turnTimeline?.assistantTimestamps || [])];
+  const reasoningTimestamps = [...(turnTimeline?.reasoningTimestamps || [])];
+  const startTimestamp = turnTimeline?.startTimestamp || null;
+  let lastTimestamp = startTimestamp;
+
+  const consumeTimestamp = (timestamps) => {
+    const nextTimestamp = timestamps.shift() || lastTimestamp || startTimestamp;
+    if (nextTimestamp) {
+      lastTimestamp = nextTimestamp;
+    }
+    return nextTimestamp;
+  };
+
+  return {
+    nextUserTimestamp: () => consumeTimestamp(userTimestamps),
+    nextAssistantTimestamp: () => consumeTimestamp(assistantTimestamps),
+    nextReasoningTimestamp: () => consumeTimestamp(reasoningTimestamps),
+    currentTimestamp: () => lastTimestamp || startTimestamp,
+  };
+}
+
 // Get messages for a specific Codex session
 async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
   try {
     const thread = await readCodexThread(sessionId, true);
     const messages = [];
+    const turnTimelines = await extractCodexTurnTimelinesFromRollout(thread.path);
     let sequence = 0;
     const baseTimestamp = (thread.createdAt || Math.floor(Date.now() / 1000)) * 1000;
     const nextTimestamp = () => new Date(baseTimestamp + sequence++).toISOString();
 
-    const pushMessage = (payload) => {
+    const pushMessage = (payload, timestampOverride = null) => {
       messages.push({
-        timestamp: nextTimestamp(),
+        timestamp: timestampOverride || nextTimestamp(),
         ...payload,
       });
     };
 
     for (const turn of thread.turns || []) {
+      const timestampCursor = createCodexTurnTimestampCursor(turnTimelines.get(turn.id));
+
       for (const item of turn.items || []) {
         if (item.type === 'userMessage') {
           const text = (item.content || [])
@@ -1685,7 +1808,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'user',
                 content: text,
               },
-            });
+            }, timestampCursor.nextUserTimestamp());
           }
           continue;
         }
@@ -1698,7 +1821,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'assistant',
                 content: item.text,
               },
-            });
+            }, timestampCursor.nextAssistantTimestamp());
           }
           continue;
         }
@@ -1711,7 +1834,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'assistant',
                 content: item.text,
               },
-            });
+            }, timestampCursor.nextAssistantTimestamp());
           }
           continue;
         }
@@ -1728,7 +1851,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'assistant',
                 content: reasoningText,
               },
-            });
+            }, timestampCursor.nextReasoningTimestamp());
           }
           continue;
         }

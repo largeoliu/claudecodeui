@@ -69,20 +69,20 @@ export default function SidebarSessionItem({
     <div className="group relative">
       {isProcessing && (
         <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 transform">
-          <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+          <div className="h-2 w-2 animate-pulse rounded-full bg-white/50 shadow-[0_0_6px_rgba(255,255,255,0.4)]" />
         </div>
       )}
 
       <div className="md:hidden">
         <div
           className={cn(
-            'p-2 mx-3 my-0.5 rounded-md bg-card border active:scale-[0.98] transition-all duration-150 relative',
-            isSelected ? 'bg-primary/5 border-primary/20' : '',
+            'p-2 mx-3 my-0.5 rounded-lg bg-white/5 border border-white/5 active:scale-[0.98] transition-all duration-150 relative',
+            isSelected && 'active-sidebar-item bg-white/10 border-white/10 text-white',
             isProcessing
-              ? 'border-green-500/40 bg-green-50/20 dark:bg-green-900/10'
+              ? 'border-white/20 bg-white/5'
               : !isSelected && sessionView.isRecent
-                ? 'border-green-500/20 bg-green-50/5 dark:bg-green-900/5'
-              : 'border-border/30',
+                ? 'border-white/5 bg-white/[0.02]'
+              : 'border-white/5',
           )}
           onClick={selectMobileSession}
         >
@@ -104,7 +104,7 @@ export default function SidebarSessionItem({
                   {formatTimeAgo(sessionView.sessionTime, currentTime, t)}
                 </span>
                 {isProcessing && (
-                  <Badge className="border-green-200 bg-green-50 px-1.5 py-0 text-[10px] font-medium text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                  <Badge className="border-green-500/20 bg-green-500/10 px-1.5 py-0 text-[10px] font-medium text-green-400">
                     {t('sessions.running', { defaultValue: 'Running' })}
                   </Badge>
                 )}
@@ -120,13 +120,13 @@ export default function SidebarSessionItem({
             </div>
 
             <button
-              className="ml-1 flex h-5 w-5 items-center justify-center rounded-md bg-red-50 opacity-70 transition-transform active:scale-95 dark:bg-red-900/20"
+              className="ml-1 flex h-5 w-5 items-center justify-center rounded-md bg-white/5 opacity-40 hover:opacity-100 transition-all active:scale-95"
               onClick={(event) => {
                 event.stopPropagation();
                 requestDeleteSession();
               }}
             >
-              <Trash2 className="h-2.5 w-2.5 text-red-600 dark:text-red-400" />
+              <Trash2 className="h-2.5 w-2.5 text-white/60" />
             </button>
           </div>
         </div>
@@ -136,9 +136,9 @@ export default function SidebarSessionItem({
         <Button
           variant="ghost"
           className={cn(
-            'w-full justify-start p-2 h-auto font-normal text-left hover:bg-accent/50 transition-colors duration-200',
-            isSelected && 'bg-accent text-accent-foreground',
-            !isSelected && isProcessing && 'bg-green-50/40 hover:bg-green-50/60 dark:bg-green-950/10 dark:hover:bg-green-950/20',
+            'w-full justify-start p-2.5 h-auto font-normal text-left rounded-xl transition-all duration-300 hover:bg-white/[0.06] mt-1 border border-transparent',
+            isSelected && 'active-sidebar-item bg-white/10 text-white',
+            !isSelected && isProcessing && 'bg-white/5 hover:bg-white/10',
           )}
           onClick={() => onSessionSelect(session, project.name)}
         >
@@ -152,7 +152,7 @@ export default function SidebarSessionItem({
                   {formatTimeAgo(sessionView.sessionTime, currentTime, t)}
                 </span>
                 {isProcessing && (
-                  <Badge className="border-green-200 bg-green-50 px-1.5 py-0 text-[10px] font-medium text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                  <Badge className="border-green-500/20 bg-green-500/10 px-1.5 py-0 text-[10px] font-medium text-green-400">
                     {t('sessions.running', { defaultValue: 'Running' })}
                   </Badge>
                 )}

@@ -27,7 +27,7 @@ export default function AssistantThinkingIndicator({ selectedProvider: _selected
         }
       `}</style>
       <div className="w-full pl-0 text-sm">
-        <div className="flex items-center space-x-3 py-3 px-2 bg-primary/5 rounded-lg border border-primary/10 w-fit">
+        <div className="flex items-center space-x-3 py-1 px-5 w-fit">
           <div className="flex items-center space-x-1.5 h-4">
             <div className="w-1 h-3 bg-primary rounded-full animate-thinking-wave" style={{ animationDelay: '0s' }}></div>
             <div className="w-1 h-3 bg-primary rounded-full animate-thinking-wave" style={{ animationDelay: '0.15s' }}></div>

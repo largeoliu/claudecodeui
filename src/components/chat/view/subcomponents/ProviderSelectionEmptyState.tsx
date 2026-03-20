@@ -134,7 +134,7 @@ export default function ProviderSelectionEmptyState({
   if (!selectedSession && !currentSessionId) {
     return (
       <div className="flex h-full items-center justify-center px-4">
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-2xl">
           {/* Heading */}
           <div className="mb-8 text-center">
             <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
@@ -145,8 +145,8 @@ export default function ProviderSelectionEmptyState({
             </p>
           </div>
 
-          {/* Provider cards — horizontal row, equal width */}
-          <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5">
+          {/* Provider cards — centered flex row */}
+          <div className="mb-10 flex flex-wrap items-stretch justify-center gap-3 sm:gap-4">
             {PROVIDERS.map((p) => {
               const active = provider === p.id;
               return (
@@ -154,13 +154,13 @@ export default function ProviderSelectionEmptyState({
                   key={p.id}
                   onClick={() => selectProvider(p.id)}
                   className={`
-                    relative flex flex-col items-center gap-2.5 rounded-xl border-[1.5px] px-2
-                    pb-4 pt-5 transition-all duration-150
+                    relative flex w-full flex-col items-center gap-3 rounded-lg border-[1.5px] px-4
+                    pb-5 pt-6 transition-all duration-200 sm:w-[160px]
                     active:scale-[0.97]
                     ${
                       active
-                        ? `${p.accent} ${p.ring} bg-card shadow-sm ring-2`
-                        : "border-border bg-card/60 hover:border-border/80 hover:bg-card"
+                        ? `${p.accent} ${p.ring} bg-card shadow-lg ring-2`
+                        : "border-white/[0.05] bg-white/[0.02] hover:border-white/[0.1] hover:bg-white/[0.04]"
                     }
                   `}
                 >

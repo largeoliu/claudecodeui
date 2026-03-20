@@ -123,11 +123,9 @@ export default function SidebarProjectItem({
         <div className="md:hidden">
           <div
             className={cn(
-              'p-3 mx-3 my-1 rounded-lg bg-card border border-border/50 active:scale-[0.98] transition-all duration-150',
-              isSelected && 'bg-primary/5 border-primary/20',
-              isStarred &&
-                !isSelected &&
-                'bg-yellow-50/50 dark:bg-yellow-900/5 border-yellow-200/30 dark:border-yellow-800/30',
+              'p-3 mx-3 my-1 rounded-lg bg-white/5 border border-white/5 active:scale-[0.98] transition-all duration-150',
+              isSelected && 'active-sidebar-item bg-white/10 border-white/10 text-white',
+              isStarred && !isSelected && 'bg-white/[0.03] border-white/5',
             )}
             onClick={toggleProject}
           >
@@ -140,9 +138,9 @@ export default function SidebarProjectItem({
                   )}
                 >
                   {isExpanded ? (
-                    <FolderOpen className="h-4 w-4 text-primary" />
+                    <FolderOpen className="h-4 w-4 text-white" />
                   ) : (
-                    <Folder className="h-4 w-4 text-muted-foreground" />
+                    <Folder className="h-4 w-4 text-white/40" />
                   )}
                 </div>
 
@@ -152,7 +150,7 @@ export default function SidebarProjectItem({
                       type="text"
                       value={editingName}
                       onChange={(event) => onEditingNameChange(event.target.value)}
-                      className="w-full rounded-lg border-2 border-primary/40 bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-all duration-200 focus:border-primary focus:shadow-md focus:outline-none"
+                      className="w-full rounded-lg border-2 border-white/20 bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-all duration-200 focus:border-white/40 focus:shadow-md focus:outline-none"
                       placeholder={t('projects.projectNamePlaceholder')}
                       autoFocus
                       autoComplete="off"
@@ -248,13 +246,13 @@ export default function SidebarProjectItem({
                     </button>
 
                     <button
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 active:scale-90 dark:border-primary/30 dark:bg-primary/20"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 active:scale-90"
                       onClick={(event) => {
                         event.stopPropagation();
                         onStartEditingProject(project);
                       }}
                     >
-                      <Edit3 className="h-4 w-4 text-primary" />
+                      <Edit3 className="h-4 w-4 text-white/60" />
                     </button>
 
                     <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/30">
@@ -273,20 +271,18 @@ export default function SidebarProjectItem({
 
         <Button
           variant="ghost"
-          className={cn(
-            'hidden md:flex w-full justify-between p-2 h-auto font-normal hover:bg-accent/50',
-            isSelected && 'bg-accent text-accent-foreground',
-            isStarred &&
-              !isSelected &&
-              'bg-yellow-50/50 dark:bg-yellow-900/10 hover:bg-yellow-100/50 dark:hover:bg-yellow-900/20',
+        className={cn(
+            'hidden md:flex w-full justify-between p-2.5 h-auto font-normal rounded-lg transition-all duration-200 hover:bg-white/5',
+            isSelected && 'active-sidebar-item bg-white/10 text-white shadow-sm',
+            isStarred && !isSelected && 'bg-white/[0.03] hover:bg-white/10'
           )}
           onClick={selectAndToggleProject}
         >
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {isExpanded ? (
-              <FolderOpen className="h-4 w-4 flex-shrink-0 text-primary" />
+              <FolderOpen className="h-4 w-4 flex-shrink-0 text-white" />
             ) : (
-              <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <Folder className="h-4 w-4 flex-shrink-0 text-white/40" />
             )}
             <div className="min-w-0 flex-1 text-left">
               {isEditing ? (
@@ -375,24 +371,24 @@ export default function SidebarProjectItem({
                   />
                 </div>
                 <div
-                  className="touch:opacity-100 flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all duration-200 hover:bg-accent group-hover:opacity-100"
+                  className="touch:opacity-100 flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all duration-200 hover:bg-white/10 group-hover:opacity-100"
                   onClick={(event) => {
                     event.stopPropagation();
                     onStartEditingProject(project);
                   }}
                   title={t('tooltips.renameProject')}
                 >
-                  <Edit3 className="h-3 w-3" />
+                  <Edit3 className="h-3 w-3 text-white/40 hover:text-white" />
                 </div>
                 <div
-                  className="touch:opacity-100 flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all duration-200 hover:bg-red-50 group-hover:opacity-100 dark:hover:bg-red-900/20"
+                  className="touch:opacity-100 flex h-6 w-6 cursor-pointer items-center justify-center rounded opacity-0 transition-all duration-200 hover:bg-white/10 group-hover:opacity-100"
                   onClick={(event) => {
                     event.stopPropagation();
                     onDeleteProject(project);
                   }}
                   title={t('tooltips.deleteProject')}
                 >
-                  <Trash2 className="h-3 w-3 text-red-600 dark:text-red-400" />
+                  <Trash2 className="h-3 w-3 text-white/30 hover:text-white" />
                 </div>
                 {isExpanded ? (
                   <ChevronDown className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground" />

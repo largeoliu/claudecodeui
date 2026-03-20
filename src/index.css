@@ -3,6 +3,21 @@
 @tailwind utilities;
 
 /* Global spinner animation - defined early to ensure it loads */
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-stagger-in {
+  animation: messageIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @keyframes spin {
   0% {
     transform: rotate(0deg);
@@ -23,114 +38,113 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --background: 240 5% 7%; /* #121212 approx */
+    --foreground: 0 0% 100%;
+    --card: 240 5% 10%;
+    --card-foreground: 0 0% 100%;
+    --popover: 240 5% 5%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 0 0% 92%; /* Softer off-white for Absolute Neutral */
+    --primary-foreground: 0 0% 0%;
+    --secondary: 240 5% 15%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 5% 15%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 92%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 0% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 20% / 0.5;
+    --input: 0 0% 20% / 0.5;
+    --ring: 0 0% 100% / 0.2;
     --radius: 0.5rem;
 
-    /* Nav design tokens */
-    --nav-glass-bg: 0 0% 100% / 0.7;
-    --nav-glass-blur: 20px;
-    --nav-glass-saturate: 1.8;
-    --nav-tab-glow: 221.2 83.2% 53.3% / 0.18;
-    --nav-tab-ring: 221.2 83.2% 53.3% / 0.10;
-    --nav-float-shadow: 0 0% 0% / 0.06;
-    --nav-float-ring: 214.3 31.8% 91.4% / 0.5;
-    --nav-divider-color: 214.3 31.8% 91.4% / 0.5;
-    --nav-input-bg: 210 40% 96.1% / 0.5;
-    --nav-input-focus-ring: 221.2 83.2% 53.3% / 0.22;
-
-    /* Safe area CSS variables */
-    --safe-area-inset-top: env(safe-area-inset-top);
-    --safe-area-inset-right: env(safe-area-inset-right);
-    --safe-area-inset-bottom: env(safe-area-inset-bottom);
-    --safe-area-inset-left: env(safe-area-inset-left);
-
-    /* Mobile navigation dimensions - Single source of truth */
-    /* Floating nav: ~52px bar + 8px bottom margin + 12px px-3 top spacing */
-    --mobile-nav-height: 52px;
-    --mobile-nav-padding: 20px;
-    --mobile-nav-total: calc(var(--mobile-nav-height) + var(--mobile-nav-padding) + env(safe-area-inset-bottom, 0px));
-
-    /* Header safe area dimensions */
-    --header-safe-area-top: env(safe-area-inset-top, 0px);
-    --header-base-padding: 8px;
-    --header-total-padding: calc(var(--header-safe-area-top) + var(--header-base-padding));
-  }
-  
-  /* Fallback for older iOS versions */
-  @supports (padding-top: constant(safe-area-inset-top)) {
-    :root {
-      --safe-area-inset-top: constant(safe-area-inset-top);
-      --safe-area-inset-right: constant(safe-area-inset-right);
-      --safe-area-inset-bottom: constant(safe-area-inset-bottom);
-      --safe-area-inset-left: constant(safe-area-inset-left);
-    }
+    /* Nav design tokens - Absolute Neutral */
+    --nav-glass-bg: 0 0% 0% / 0.6;
+    --nav-glass-blur: 16px;
+    --nav-glass-saturate: 1.5;
+    --nav-tab-glow: 0 0% 100% / 0.06;
+    --nav-tab-ring: 0 0% 100% / 0.1;
+    --nav-float-shadow: 0 0% 0% / 0.9;
+    --nav-float-ring: 0 0% 100% / 0.08;
+    --nav-divider-color: 0 0% 100% / 0.05;
+    --nav-input-bg: 0 0% 0% / 0.2;
+    --nav-input-focus-ring: 0 0% 100% / 0.2;
+    
+    /* New Premium Tokens */
+    --accent-glow: 210 100% 60% / 0.15;
+    --accent-purple: 270 100% 65%;
+    --accent-purple-glow: 270 100% 65% / 0.2;
+    --glass-border: 0 0% 100% / 0.08;
+    --glass-reflect: 0 0% 100% / 0.03;
+    --input-focus-glow: 210 100% 60% / 0.1;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 217.2 91.2% 8%;
-    --card-foreground: 210 40% 98%;
-    --popover: 217.2 91.2% 8%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 220 13% 46%;
-    --ring: 217.2 91.2% 59.8%;
-
-    /* Nav design tokens — dark overrides */
-    --nav-glass-bg: 217.2 91.2% 8% / 0.55;
-    --nav-glass-blur: 24px;
-    --nav-glass-saturate: 1.6;
-    --nav-tab-glow: 217.2 91.2% 59.8% / 0.25;
-    --nav-tab-ring: 217.2 91.2% 59.8% / 0.15;
-    --nav-float-shadow: 0 0% 0% / 0.35;
-    --nav-float-ring: 217.2 32.6% 17.5% / 0.3;
-    --nav-divider-color: 217.2 32.6% 17.5% / 0.5;
-    --nav-input-bg: 217.2 32.6% 17.5% / 0.5;
-    --nav-input-focus-ring: 217.2 91.2% 59.8% / 0.25;
+    /* Same as root - Absolute Neutral */
+    --background: 240 5% 7%;
+    --foreground: 0 0% 100%;
+    --card: 240 5% 10%;
+    --card-foreground: 0 0% 100%;
+    --popover: 240 5% 5%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 0%;
+    --secondary: 240 5% 15%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 5% 15%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 100%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 0% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 20% / 0.5;
+    --input: 0 0% 22% / 0.5;
+    --ring: 0 0% 100% / 0.2;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-    box-sizing: border-box;
-    transition: none;
-  }
-  
   body {
     @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    margin: 0;
-    padding: 0;
+    font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+    position: relative;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', monospace !important;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: 
+      radial-gradient(circle at 50% -20%, hsla(210, 100%, 60%, 0.05) 0%, transparent 70%),
+      radial-gradient(circle at 0% 0%, hsla(260, 100%, 60%, 0.03) 0%, transparent 40%);
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  /* Noise texture for premium feel */
+  body::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: -1;
+    mix-blend-mode: overlay;
   }
 
   html, body {
@@ -278,10 +292,58 @@
                 0 0 0 1px hsl(var(--nav-float-ring));
   }
 
+  /* Custom Scrollbar for Sidebar */
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Active Sidebar Item Indicator */
+  .active-sidebar-item {
+    position: relative;
+    background: rgba(255, 255, 255, 0.08);
+    color: white !important;
+    box-shadow: 0 0 20px hsla(210, 100%, 60%, 0.05);
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+  .active-sidebar-item::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 20%;
+    height: 60%;
+    width: 2px;
+    background: white;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+    border-radius: 0 2px 2px 0;
+  }
+
   /* Subtle sidebar divider — uses theme tokens */
   .nav-divider {
     height: 1px;
-    background: linear-gradient(90deg, transparent, hsl(var(--nav-divider-color)) 20%, hsl(var(--nav-divider-color)) 80%, transparent);
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.05), transparent);
+    margin: 8px 0;
+  }
+
+  .nav-search-wrapper {
+    position: relative;
+  }
+  .nav-search-wrapper::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
   }
 
   /* Nav search input surface — uses theme tokens */
@@ -940,5 +1002,16 @@ body.pwa-mode .pwa-header-safe {
       outline-offset: 4px;
       background-color: transparent;
     }
+  }
+
+  .premium-glow {
+    box-shadow: 0 0 15px hsla(var(--accent-glow));
+  }
+
+  .premium-glass-card {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px);
+    border: 0.5px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.02);
   }
 }

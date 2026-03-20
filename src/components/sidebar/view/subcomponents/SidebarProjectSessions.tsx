@@ -39,7 +39,11 @@ function SessionListSkeleton() {
       {Array.from({ length: 3 }).map((_, index) => (
         <div key={index} className="rounded-md p-2">
           <div className="flex items-start gap-2">
-            <div className="mt-0.5 h-3 w-3 animate-pulse rounded-full bg-muted" />
+            <div className="relative">
+              <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 transform">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-white/50 shadow-[0_0_6px_rgba(255,255,255,0.3)]" />
+              </div>
+            </div>
             <div className="flex-1 space-y-1">
               <div className="h-3 animate-pulse rounded bg-muted" style={{ width: `${60 + index * 15}%` }} />
               <div className="h-2 w-1/2 animate-pulse rounded bg-muted" />
@@ -135,7 +139,7 @@ export default function SidebarProjectSessions({
 
       <div className="px-3 pb-2 md:hidden">
         <button
-          className="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-primary text-xs font-medium text-primary-foreground transition-all duration-150 hover:bg-primary/90 active:scale-[0.98]"
+          className="p-2 mx-3 my-0.5 rounded-lg bg-white/5 border border-white/5 active:scale-[0.98] transition-all duration-150 relative flex h-8 w-full items-center justify-center gap-2 text-xs font-medium text-primary-foreground"
           onClick={() => {
             onProjectSelect(project);
             onNewSession(project);
@@ -149,10 +153,10 @@ export default function SidebarProjectSessions({
       <Button
         variant="default"
         size="sm"
-        className="mt-1 hidden h-8 w-full justify-start gap-2 bg-primary text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 md:flex"
+        className="mt-2 hidden h-9 w-full justify-center gap-2 bg-white/10 text-white font-semibold text-xs transition-all hover:bg-white/20 active:scale-[0.98] md:flex rounded-lg shadow-sm border border-white/10"
         onClick={() => onNewSession(project)}
       >
-        <Plus className="h-3 w-3" />
+        <Plus className="h-4 w-4" />
         {t('sessions.newSession')}
       </Button>
     </div>

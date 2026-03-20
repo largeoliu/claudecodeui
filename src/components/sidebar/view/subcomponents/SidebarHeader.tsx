@@ -1,21 +1,13 @@
-import { Folder, FolderPlus, MessageSquare, Plus, RefreshCw, Search, X, PanelLeftClose } from 'lucide-react';
+import { FolderPlus, Plus, RefreshCw, PanelLeftClose } from 'lucide-react';
 import type { TFunction } from 'i18next';
-import { Button, Input } from '../../../../shared/view/ui';
+import { Button } from '../../../../shared/view/ui';
 import { IS_PLATFORM } from '../../../../constants/config';
 import { cn } from '../../../../lib/utils';
-
-type SearchMode = 'projects' | 'conversations';
 
 type SidebarHeaderProps = {
   isPWA: boolean;
   isMobile: boolean;
   isLoading: boolean;
-  projectsCount: number;
-  searchFilter: string;
-  onSearchFilterChange: (value: string) => void;
-  onClearSearchFilter: () => void;
-  searchMode: SearchMode;
-  onSearchModeChange: (mode: SearchMode) => void;
   onRefresh: () => void;
   isRefreshing: boolean;
   onCreateProject: () => void;
@@ -27,12 +19,6 @@ export default function SidebarHeader({
   isPWA,
   isMobile,
   isLoading,
-  projectsCount,
-  searchFilter,
-  onSearchFilterChange,
-  onClearSearchFilter,
-  searchMode,
-  onSearchModeChange,
   onRefresh,
   isRefreshing,
   onCreateProject,
@@ -40,13 +26,17 @@ export default function SidebarHeader({
   t,
 }: SidebarHeaderProps) {
   const LogoBlock = () => (
-    <div className="flex min-w-0 items-center gap-2.5">
-      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-primary/90 shadow-sm">
-        <svg className="h-3.5 w-3.5 text-primary-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    <div className="flex min-w-0 items-center gap-3">
+      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/90 shadow-[0_0_8px_rgba(255,255,255,0.15)] transition-transform hover:scale-105 active:scale-95">
+        <svg className="h-4 w-4 text-zinc-950" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L2 19h20L12 2zm0 3.8L19.1 17H4.9L12 5.8z" opacity=".2" />
+          <path d="M12 8l-5 8h10l-5-8z" />
         </svg>
       </div>
-      <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">{t('app.title')}</h1>
+      <div className="flex flex-col min-w-0">
+        <h1 className="truncate text-[13px] font-bold tracking-tight text-white leading-tight">{t('app.title')}</h1>
+        <span className="text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold whitespace-nowrap">Absolute Neutral</span>
+      </div>
     </div>
   );
 
@@ -55,7 +45,6 @@ export default function SidebarHeader({
       {/* Desktop header */}
       <div
         className="hidden px-3 pb-2 pt-3 md:block"
-        style={{}}
       >
         <div className="flex items-center justify-between gap-2">
           {IS_PLATFORM ? (
@@ -70,34 +59,32 @@ export default function SidebarHeader({
             <LogoBlock />
           )}
 
-          <div className="flex flex-shrink-0 items-center gap-0.5">
+          <div className="flex flex-shrink-0 items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 rounded-lg p-0 text-muted-foreground hover:bg-accent/80 hover:text-foreground"
+              className="h-8 w-8 rounded-lg p-0 text-white/30 hover:bg-white/5 hover:text-white"
               onClick={onRefresh}
               disabled={isRefreshing}
               title={t('tooltips.refresh')}
             >
               <RefreshCw
-                className={`h-3.5 w-3.5 ${
-                  isRefreshing ? 'animate-spin' : ''
-                }`}
+                className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
               />
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 rounded-lg p-0 text-muted-foreground hover:bg-accent/80 hover:text-foreground"
+              className="h-8 w-8 rounded-lg p-0 text-white/30 hover:bg-white/5 hover:text-white"
               onClick={onCreateProject}
               title={t('tooltips.createProject')}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 w-7 rounded-lg p-0 text-muted-foreground hover:bg-accent/80 hover:text-foreground"
+              className="h-8 w-8 rounded-lg p-0 text-white/30 hover:bg-white/5 hover:text-white"
               onClick={onCollapseSidebar}
               title={t('tooltips.hideSidebar')}
             >
@@ -105,60 +92,6 @@ export default function SidebarHeader({
             </Button>
           </div>
         </div>
-
-        {/* Search bar */}
-        {projectsCount > 0 && !isLoading && (
-          <div className="mt-2.5 space-y-2">
-            {/* Search mode toggle */}
-            <div className="flex rounded-lg bg-muted/50 p-0.5">
-              <button
-                onClick={() => onSearchModeChange('projects')}
-                aria-pressed={searchMode === 'projects'}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all",
-                  searchMode === 'projects'
-                    ? "bg-background shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Folder className="h-3 w-3" />
-                {t('search.modeProjects')}
-              </button>
-              <button
-                onClick={() => onSearchModeChange('conversations')}
-                aria-pressed={searchMode === 'conversations'}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all",
-                  searchMode === 'conversations'
-                    ? "bg-background shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <MessageSquare className="h-3 w-3" />
-                {t('search.modeConversations')}
-              </button>
-            </div>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-              <Input
-                type="text"
-                placeholder={searchMode === 'conversations' ? t('search.conversationsPlaceholder') : t('projects.searchPlaceholder')}
-                value={searchFilter}
-                onChange={(event) => onSearchFilterChange(event.target.value)}
-                className="nav-search-input h-9 rounded-xl border-0 pl-9 pr-8 text-sm transition-all duration-200 placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-              {searchFilter && (
-                <button
-                  onClick={onClearSearchFilter}
-                  aria-label={t('tooltips.clearSearch')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 hover:bg-accent"
-                >
-                  <X className="h-3 w-3 text-muted-foreground" />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Desktop divider */}
@@ -198,59 +131,6 @@ export default function SidebarHeader({
             </button>
           </div>
         </div>
-
-        {/* Mobile search */}
-        {projectsCount > 0 && !isLoading && (
-          <div className="mt-2.5 space-y-2">
-            <div className="flex rounded-lg bg-muted/50 p-0.5">
-              <button
-                onClick={() => onSearchModeChange('projects')}
-                aria-pressed={searchMode === 'projects'}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all",
-                  searchMode === 'projects'
-                    ? "bg-background shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Folder className="h-3 w-3" />
-                {t('search.modeProjects')}
-              </button>
-              <button
-                onClick={() => onSearchModeChange('conversations')}
-                aria-pressed={searchMode === 'conversations'}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-all",
-                  searchMode === 'conversations'
-                    ? "bg-background shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <MessageSquare className="h-3 w-3" />
-                {t('search.modeConversations')}
-              </button>
-            </div>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" />
-              <Input
-                type="text"
-                placeholder={searchMode === 'conversations' ? t('search.conversationsPlaceholder') : t('projects.searchPlaceholder')}
-                value={searchFilter}
-                onChange={(event) => onSearchFilterChange(event.target.value)}
-                className="nav-search-input h-10 rounded-xl border-0 pl-10 pr-9 text-sm transition-all duration-200 placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-              {searchFilter && (
-                <button
-                  onClick={onClearSearchFilter}
-                  aria-label={t('tooltips.clearSearch')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 hover:bg-accent"
-                >
-                  <X className="h-3.5 w-3.5 text-muted-foreground" />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Mobile divider */}

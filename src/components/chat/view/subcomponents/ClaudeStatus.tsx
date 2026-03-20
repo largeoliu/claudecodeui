@@ -110,13 +110,13 @@ export default function ClaudeStatus({
 
   return (
     <div className="animate-in slide-in-from-bottom mb-3 w-full duration-300 sm:mb-6">
-      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-2xl border border-border/70 bg-card/90 shadow-md backdrop-blur-md">
+      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-lg border border-border/70 bg-card/90 shadow-md backdrop-blur-md">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-sky-500/10 dark:from-primary/20 dark:to-sky-400/20" />
 
         <div className="relative px-3 py-3 sm:px-4 sm:py-3.5">
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3" role="status" aria-live="polite">
-              <div className="relative mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10">
+              <div className="relative mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10">
                 <SessionProviderLogo provider={provider} className="h-5 w-5" />
                 <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
                   {isLoading && (
@@ -173,7 +173,7 @@ export default function ClaudeStatus({
                 <button
                   type="button"
                   onClick={onAbort}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-destructive px-3.5 py-2 text-sm font-semibold text-destructive-foreground shadow-sm ring-1 ring-destructive/40 transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/70 active:opacity-90 sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-destructive px-3.5 py-2 text-sm font-semibold text-destructive-foreground shadow-sm ring-1 ring-destructive/40 transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/70 active:opacity-90 sm:w-auto"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

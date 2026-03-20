@@ -58,6 +58,7 @@ interface UseChatRealtimeHandlersArgs {
   onCodexSessionCreated?: (sessionId?: string | null) => void;
   onNavigateToSession?: (sessionId: string) => void;
   onWebSocketReconnect?: () => void;
+  onCodexInteractiveRequestSettled?: () => void;
 }
 
 const appendStreamingChunk = (
@@ -371,6 +372,7 @@ export function useChatRealtimeHandlers({
   onCodexSessionCreated,
   onNavigateToSession,
   onWebSocketReconnect,
+  onCodexInteractiveRequestSettled,
 }: UseChatRealtimeHandlersArgs) {
   const lastProcessedMessageRef = useRef<LatestChatMessage | null>(null);
 
@@ -432,7 +434,16 @@ export function useChatRealtimeHandlers({
       Boolean(pendingViewSessionRef.current) && !pendingViewSessionRef.current?.sessionId;
     const isSystemInitForView =
       systemInitSessionId && (!activeViewSessionId || systemInitSessionId === activeViewSessionId);
-    const shouldBypassSessionFilter = isGlobalMessage || Boolean(isSystemInitForView);
+    const isInteractiveResponseForPendingRequest =
+      Boolean(latestMessage.requestId)
+      && (
+        latestMessage.type === 'codex-interactive-response-received'
+        || latestMessage.type === 'codex-interactive-response-ack'
+        || latestMessage.type === 'codex-interactive-response-error'
+      )
+      && pendingPermissionRequests.some((request) => request.requestId === latestMessage.requestId);
+    const shouldBypassSessionFilter =
+      isGlobalMessage || Boolean(isSystemInitForView) || isInteractiveResponseForPendingRequest;
     const isLifecycleMessage = lifecycleMessageTypes.has(messageType);
     const isUnscopedError =
       !latestMessage.sessionId &&
@@ -1457,6 +1468,7 @@ export function useChatRealtimeHandlers({
         setPendingPermissionRequests((previous) =>
           previous.filter((request) => request.requestId !== latestMessage.requestId),
         );
+        onCodexInteractiveRequestSettled?.();
         break;
 
       case 'codex-interactive-response-error':
@@ -1469,6 +1481,15 @@ export function useChatRealtimeHandlers({
             setPendingPermissionRequests((previous) =>
               previous.filter((request) => request.requestId !== requestId),
             );
+            setChatMessages((previous) => [
+              ...previous,
+              {
+                type: 'error',
+                content: 'This Codex request expired before it could be applied. The session has been refreshed.',
+                timestamp: new Date(),
+              },
+            ]);
+            onCodexInteractiveRequestSettled?.();
             break;
           }
           setPendingPermissionRequests((previous) =>
@@ -1789,6 +1810,7 @@ export function useChatRealtimeHandlers({
     onReplaceTemporarySession,
     onNavigateToSession,
     onWebSocketReconnect,
+    onCodexInteractiveRequestSettled,
     pendingViewSessionRef,
     streamBufferRef,
     streamTimerRef,

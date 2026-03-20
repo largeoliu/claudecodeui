@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import sqlite3 from 'sqlite3';
+import { coerceCodexReasoningEffortForModel } from '../../shared/modelConstants.js';
 
 const REQUEST_TIMEOUT_MS = 30000;
 const CODEX_APP_SERVER_ARGS = ['app-server', '--listen', 'stdio://'];
@@ -127,9 +128,13 @@ function normalizeTrackedModel(model) {
 }
 
 function normalizeTrackedTurnSettings(settings = {}) {
+  const model = normalizeTrackedModel(settings.model);
+
   return {
-    model: normalizeTrackedModel(settings.model),
-    reasoningEffort: normalizeReasoningEffort(settings.reasoningEffort),
+    model,
+    reasoningEffort: normalizeReasoningEffort(
+      coerceCodexReasoningEffortForModel(model, settings.reasoningEffort),
+    ),
   };
 }
 
@@ -890,12 +895,28 @@ class CodexAppServer {
     }
 
     if (method === 'turn/completed') {
+      const completedTurnId = params.turn?.id || null;
+      const activeTurnId = this.activeTurns.get(params.threadId)?.turnId || null;
+      const isStaleTurnEvent = Boolean(activeTurnId && completedTurnId && activeTurnId !== completedTurnId);
+
+      if (isStaleTurnEvent) {
+        return;
+      }
+
       this.broadcastToThread(params.threadId, buildCodexResponse(method, params));
       this.finishTurn(params.threadId, params.turn);
       return;
     }
 
     if (method === 'error') {
+      const errorTurnId = params.turnId || null;
+      const activeTurnId = this.activeTurns.get(params.threadId)?.turnId || null;
+      const isStaleTurnEvent = Boolean(activeTurnId && errorTurnId && activeTurnId !== errorTurnId);
+
+      if (isStaleTurnEvent) {
+        return;
+      }
+
       this.broadcastToThread(params.threadId, buildCodexResponse(method, params));
       if (!params.willRetry) {
         this.finishTurn(params.threadId, {
@@ -951,50 +972,77 @@ class CodexAppServer {
     }
 
     const activeTurn = this.activeTurns.get(threadId);
-    if (activeTurn) {
-      this.activeTurns.delete(threadId);
-      if (activeTurn.turnId && this.turnWaiters.has(activeTurn.turnId)) {
-        const waiter = this.turnWaiters.get(activeTurn.turnId);
-        this.turnWaiters.delete(activeTurn.turnId);
-        waiter.resolve(turn);
-      }
+    const completedTurnId = turn?.id || null;
+
+    if (activeTurn?.turnId && completedTurnId && activeTurn.turnId !== completedTurnId) {
+      return;
     }
 
-    this.clearPendingUiRequests(threadId);
+    const resolvedTurnId = completedTurnId || activeTurn?.turnId || null;
+
+    if (activeTurn) {
+      this.activeTurns.delete(threadId);
+      if (resolvedTurnId && this.turnWaiters.has(resolvedTurnId)) {
+        const waiter = this.turnWaiters.get(resolvedTurnId);
+        this.turnWaiters.delete(resolvedTurnId);
+        waiter.resolve(turn);
+      }
+    } else if (resolvedTurnId && this.turnWaiters.has(resolvedTurnId)) {
+      const waiter = this.turnWaiters.get(resolvedTurnId);
+      this.turnWaiters.delete(resolvedTurnId);
+      waiter.resolve(turn);
+    }
+
+    this.clearPendingUiRequests(threadId, resolvedTurnId ? { turnId: resolvedTurnId } : undefined);
   }
 
   storePendingUiRequest(request, metadata) {
-    this.pendingUiRequests.set(request.requestId, {
+    const normalizedMetadata = {
+      ...metadata,
+      turnId: metadata?.turnId || this.activeTurns.get(request.sessionId)?.turnId || null,
+    };
+    const storedRequest = {
       ...request,
-      metadata,
-    });
+      metadata: normalizedMetadata,
+    };
+
+    this.pendingUiRequests.set(request.requestId, storedRequest);
 
     if (!this.pendingUiRequestsByThread.has(request.sessionId)) {
       this.pendingUiRequestsByThread.set(request.sessionId, new Map());
     }
 
-    this.pendingUiRequestsByThread.get(request.sessionId).set(request.requestId, {
-      ...request,
-      metadata,
-    });
+    this.pendingUiRequestsByThread.get(request.sessionId).set(request.requestId, storedRequest);
   }
 
-  clearPendingUiRequests(threadId) {
+  clearPendingUiRequests(threadId, options = {}) {
+    const { turnId = null, broadcast = true } = options;
     const pendingByThread = this.pendingUiRequestsByThread.get(threadId);
     if (!pendingByThread) {
       return;
     }
 
-    for (const requestId of pendingByThread.keys()) {
+    for (const [requestId, pending] of Array.from(pendingByThread.entries())) {
+      const pendingTurnId = pending?.metadata?.turnId || null;
+      if (turnId && pendingTurnId && pendingTurnId !== turnId) {
+        continue;
+      }
+
       this.pendingUiRequests.delete(requestId);
-      this.broadcastToThread(threadId, {
-        type: 'codex-request-cancelled',
-        sessionId: threadId,
-        requestId,
-      });
+      pendingByThread.delete(requestId);
+
+      if (broadcast) {
+        this.broadcastToThread(threadId, {
+          type: 'codex-request-cancelled',
+          sessionId: threadId,
+          requestId,
+        });
+      }
     }
 
-    this.pendingUiRequestsByThread.delete(threadId);
+    if (pendingByThread.size === 0) {
+      this.pendingUiRequestsByThread.delete(threadId);
+    }
   }
 
   sendRaw(message) {
@@ -1244,14 +1292,17 @@ class CodexAppServer {
       cwd: options.cwd || null,
       approvalPolicy: options.approvalPolicy || null,
     };
-    const normalizedReasoningEffort = normalizeReasoningEffort(options.reasoningEffort);
+    const normalizedModel = normalizeTrackedModel(options.model);
+    const normalizedReasoningEffort = normalizeReasoningEffort(
+      coerceCodexReasoningEffortForModel(normalizedModel, options.reasoningEffort),
+    );
 
     if (options.collaborationMode) {
       requestParams.collaborationMode = options.collaborationMode;
     }
 
-    if (options.model) {
-      requestParams.model = options.model || null;
+    if (normalizedModel) {
+      requestParams.model = normalizedModel;
     }
 
     if (normalizedReasoningEffort) {
@@ -1461,7 +1512,8 @@ class CodexAppServer {
     return buildInteractiveResponseResult(pending);
   }
 
-  deletePendingRequest(requestId, threadId) {
+  deletePendingRequest(requestId, threadId, options = {}) {
+    const { broadcast = false } = options;
     const pending = this.pendingUiRequests.get(requestId);
     this.pendingUiRequests.delete(requestId);
 
@@ -1473,7 +1525,7 @@ class CodexAppServer {
       }
     }
 
-    if (pending) {
+    if (pending && broadcast) {
       this.broadcastToThread(threadId, {
         type: 'codex-request-cancelled',
         sessionId: threadId,

@@ -318,7 +318,7 @@ export default function ChatMessagesPane({
                     key={virtualItem.key}
                     ref={rowVirtualizer.measureElement}
                     data-index={virtualItem.index}
-                    className="absolute left-0 top-0 w-full pb-3 sm:pb-4"
+                    className="absolute left-0 top-0 w-full pb-1 sm:pb-1.5"
                     style={{ transform: `translateY(${virtualItem.start - topContentHeight}px)` }}
                   >
                     {renderMessage(message, virtualItem.index)}
@@ -327,7 +327,7 @@ export default function ChatMessagesPane({
               })}
             </div>
           ) : (
-            <div className="space-y-3 sm:space-y-4">
+            <div className="space-y-1 sm:space-y-1.5">
               {visibleMessages.map((message, index) => renderMessage(message, index))}
             </div>
           )}

@@ -193,6 +193,24 @@ function ChatInterface({
     });
   }, [provider, selectedSession, sendMessage]);
 
+  const resyncCodexInteractiveState = useCallback(() => {
+    if (!selectedSession?.id) {
+      return;
+    }
+
+    const activeProvider = selectedSession.__provider || provider;
+    if (activeProvider !== 'codex') {
+      return;
+    }
+
+    sendMessage({
+      type: 'check-session-status',
+      sessionId: selectedSession.id,
+      provider: activeProvider,
+    });
+    requestPendingPermissions();
+  }, [provider, requestPendingPermissions, selectedSession, sendMessage]);
+
   const {
     input,
     setInput,
@@ -323,6 +341,7 @@ function ChatInterface({
     onCodexSessionCreated: handleCodexSessionCreated,
     onNavigateToSession,
     onWebSocketReconnect: handleWebSocketReconnect,
+    onCodexInteractiveRequestSettled: resyncCodexInteractiveState,
   });
 
   useEffect(() => {

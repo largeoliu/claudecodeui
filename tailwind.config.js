@@ -14,6 +14,10 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        display: ['Outfit', 'sans-serif'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -47,6 +51,35 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        // Antigravity Custom Tokens (Absolute Neutral - Grayscale)
+        antigravity: {
+          black: "#121212",
+          dark: "#0A0A0A",
+          charcoal: "#1E1E1E",
+          gray: "#3F3F46",
+          silver: "#A1A1AA",
+          white: "#FFFFFF",
+          glass: "rgba(255, 255, 255, 0.02)",
+        }
+      },
+      animation: {
+        "float": "float 6s ease-in-out infinite",
+        "fade-in": "fade-in 0.5s ease-out forwards",
+        "stagger-in": "stagger-in 0.4s ease-out forwards",
+      },
+      keyframes: {
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
+        "fade-in": {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "stagger-in": {
+          "0%": { opacity: "0", transform: "translateX(-15px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
         },
       },
       borderRadius: {

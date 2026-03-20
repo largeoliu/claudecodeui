@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
+import {
+  CLAUDE_MODELS,
+  CODEX_MODELS,
+  GEMINI_MODELS,
+  coerceCodexReasoningEffortForModel,
+} from '../../../../shared/modelConstants';
 import type {
   CodexApprovalPolicy,
   CodexInteractionMode,
@@ -80,10 +85,25 @@ const getDefaultCodexApprovalPolicy = (): CodexApprovalPolicy => {
 
 const getDefaultCodexReasoningEffort = (): CodexReasoningEffort => {
   const parsed = readStoredCodexSettings();
-  return isCodexReasoningEffort(parsed.reasoningEffort)
-    ? parsed.reasoningEffort
-    : DEFAULT_CODEX_REASONING_EFFORT;
+  const model = safeLocalStorage.getItem('codex-model') || CODEX_MODELS.DEFAULT;
+  return coerceCodexReasoningEffortForModel(
+    model,
+    isCodexReasoningEffort(parsed.reasoningEffort)
+      ? parsed.reasoningEffort
+      : DEFAULT_CODEX_REASONING_EFFORT,
+  ) as CodexReasoningEffort;
 };
+
+const resolveCodexReasoningEffort = (
+  model: string,
+  reasoningEffort: unknown,
+  fallback: CodexReasoningEffort = DEFAULT_CODEX_REASONING_EFFORT,
+): CodexReasoningEffort => (
+  coerceCodexReasoningEffortForModel(
+    model,
+    isCodexReasoningEffort(reasoningEffort) ? reasoningEffort : fallback,
+  ) as CodexReasoningEffort
+);
 
 const isConcreteSessionId = (value: string | null | undefined): value is string => (
   typeof value === 'string' && value.length > 0 && !value.startsWith('new-session-')
@@ -120,6 +140,7 @@ const writeJsonStorage = (key: string, value: Record<string, unknown>) => {
 
 const readLegacyCodexSettings = (sessionId?: string | null): CodexSettingsState => {
   const globalSettings = readStoredCodexSettings();
+  const model = safeLocalStorage.getItem('codex-model') || CODEX_MODELS.DEFAULT;
   const savedInteractionMode = isConcreteSessionId(sessionId)
     ? safeLocalStorage.getItem(`${CODEX_INTERACTION_MODE_PREFIX}${sessionId}`)
     : null;
@@ -128,37 +149,37 @@ const readLegacyCodexSettings = (sessionId?: string | null): CodexSettingsState 
     : null;
 
   return {
-    model: safeLocalStorage.getItem('codex-model') || CODEX_MODELS.DEFAULT,
+    model,
     interactionMode: isCodexInteractionMode(savedInteractionMode)
       ? savedInteractionMode
       : getDefaultCodexInteractionMode(),
     approvalPolicy: isCodexApprovalPolicy(savedApprovalPolicy)
       ? savedApprovalPolicy
       : getDefaultCodexApprovalPolicy(),
-    reasoningEffort: isCodexReasoningEffort(globalSettings.reasoningEffort)
-      ? globalSettings.reasoningEffort
-      : DEFAULT_CODEX_REASONING_EFFORT,
+    reasoningEffort: resolveCodexReasoningEffort(model, globalSettings.reasoningEffort),
   };
 };
 
 const normalizeCodexSettings = (
   settings: Record<string, unknown> | null,
   fallback: CodexSettingsState,
-): CodexSettingsState => ({
-  model:
+): CodexSettingsState => {
+  const model =
     typeof settings?.model === 'string' && settings.model.trim()
       ? settings.model
-      : fallback.model,
-  interactionMode: isCodexInteractionMode(settings?.interactionMode)
-    ? settings.interactionMode
-    : fallback.interactionMode,
-  approvalPolicy: isCodexApprovalPolicy(settings?.approvalPolicy)
-    ? settings.approvalPolicy
-    : fallback.approvalPolicy,
-  reasoningEffort: isCodexReasoningEffort(settings?.reasoningEffort)
-    ? settings.reasoningEffort
-    : fallback.reasoningEffort,
-});
+      : fallback.model;
+
+  return {
+    model,
+    interactionMode: isCodexInteractionMode(settings?.interactionMode)
+      ? settings.interactionMode
+      : fallback.interactionMode,
+    approvalPolicy: isCodexApprovalPolicy(settings?.approvalPolicy)
+      ? settings.approvalPolicy
+      : fallback.approvalPolicy,
+    reasoningEffort: resolveCodexReasoningEffort(model, settings?.reasoningEffort, fallback.reasoningEffort),
+  };
+};
 
 const getPendingSessionId = (): string | null => {
   if (typeof window === 'undefined') {
@@ -261,32 +282,26 @@ export function useChatProviderState({
       currentSessionId,
     });
 
+    const normalizedSettings = normalizeCodexSettings({
+      ...readCurrentCodexSettings(),
+      ...partial,
+    }, readCurrentCodexSettings());
+
     if (resolvedSessionId) {
       const sessionKey = getCodexSessionSettingsKey(resolvedSessionId);
-      const nextSettings = {
-        ...readCurrentCodexSettings(),
-        ...partial,
-      };
-      writeJsonStorage(sessionKey, nextSettings);
-      applyCodexSettings(nextSettings);
+      writeJsonStorage(sessionKey, normalizedSettings);
+      applyCodexSettings(normalizedSettings);
       return;
     }
 
     if (provider === 'codex' && projectKey) {
       const draftKey = getCodexDraftSettingsKey(projectKey);
-      const nextSettings = {
-        ...readCurrentCodexSettings(),
-        ...partial,
-      };
-      writeJsonStorage(draftKey, nextSettings);
-      applyCodexSettings(nextSettings);
+      writeJsonStorage(draftKey, normalizedSettings);
+      applyCodexSettings(normalizedSettings);
       return;
     }
 
-    applyCodexSettings({
-      ...readCurrentCodexSettings(),
-      ...partial,
-    });
+    applyCodexSettings(normalizedSettings);
   }, [applyCodexSettings, currentSessionId, projectKey, provider, readCurrentCodexSettings, selectedSession]);
 
   const handleCodexSessionCreated = useCallback((sessionId?: string | null) => {
@@ -354,8 +369,11 @@ export function useChatProviderState({
   }, [applyCodexSettings, currentSessionId, provider, readCurrentCodexSettings, selectedSession?.__provider, selectedSession?.id]);
 
   const setCodexModel = useCallback((nextModel: string) => {
-    persistCodexSettings({ model: nextModel });
-  }, [persistCodexSettings]);
+    persistCodexSettings({
+      model: nextModel,
+      reasoningEffort: coerceCodexReasoningEffortForModel(nextModel, codexReasoningEffort) as CodexReasoningEffort,
+    });
+  }, [codexReasoningEffort, persistCodexSettings]);
 
   const setCodexInteractionMode = useCallback((nextMode: CodexInteractionMode) => {
     persistCodexSettings({ interactionMode: nextMode });
@@ -366,8 +384,10 @@ export function useChatProviderState({
   }, [persistCodexSettings]);
 
   const setCodexReasoningEffort = useCallback((nextEffort: CodexReasoningEffort) => {
-    persistCodexSettings({ reasoningEffort: nextEffort });
-  }, [persistCodexSettings]);
+    persistCodexSettings({
+      reasoningEffort: coerceCodexReasoningEffortForModel(codexModel, nextEffort) as CodexReasoningEffort,
+    });
+  }, [codexModel, persistCodexSettings]);
 
   const cyclePermissionMode = useCallback(() => {
     if (provider === 'codex') {

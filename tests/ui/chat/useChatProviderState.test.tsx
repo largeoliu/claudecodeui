@@ -123,6 +123,53 @@ describe('useChatProviderState', () => {
     });
   });
 
+  it('coerces unsupported reasoning effort when hydrating a weaker model', async () => {
+    localStorage.setItem('selected-provider', 'codex');
+    localStorage.setItem('chat-session-settings:codex:codex-session', JSON.stringify({
+      model: 'o4-mini',
+      interactionMode: 'edit',
+      approvalPolicy: 'on-request',
+      reasoningEffort: 'high',
+    }));
+
+    const { result } = renderHook(() => useChatProviderState({
+      selectedProject,
+      selectedSession: { id: 'codex-session', __provider: 'codex' } as any,
+      currentSessionId: 'codex-session',
+    }));
+
+    await waitFor(() => {
+      expect(result.current.codexModel).toBe('o4-mini');
+    });
+
+    expect(result.current.codexReasoningEffort).toBe('medium');
+  });
+
+  it('downgrades reasoning effort when switching to a model without high support', async () => {
+    localStorage.setItem('selected-provider', 'codex');
+
+    const { result } = renderHook(() => useChatProviderState({
+      selectedProject,
+      selectedSession: { id: 'codex-session', __provider: 'codex' } as any,
+      currentSessionId: 'codex-session',
+    }));
+
+    act(() => {
+      result.current.setCodexReasoningEffort('high');
+      result.current.setCodexModel('o4-mini');
+    });
+
+    await waitFor(() => {
+      expect(result.current.codexModel).toBe('o4-mini');
+    });
+
+    expect(result.current.codexReasoningEffort).toBe('medium');
+    expect(JSON.parse(localStorage.getItem('chat-session-settings:codex:codex-session') || '{}')).toMatchObject({
+      model: 'o4-mini',
+      reasoningEffort: 'medium',
+    });
+  });
+
   it('cycles Claude permission modes and persists them per session', async () => {
     localStorage.setItem('selected-provider', 'claude');
     localStorage.setItem('permissionMode-claude-session', 'acceptEdits');

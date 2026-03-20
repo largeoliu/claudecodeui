@@ -124,9 +124,9 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
       ? displayConfig.title(parsedData)
       : displayConfig.title || 'Details';
 
-    const defaultOpen = displayConfig.defaultOpen !== undefined
-      ? displayConfig.defaultOpen
-      : autoExpandTools;
+    const defaultOpen = autoExpandTools
+      ? true
+      : (displayConfig.defaultOpen ?? false);
 
     const contentProps = displayConfig.getContentProps?.(parsedData, {
       selectedProject,
@@ -226,7 +226,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
         title={title}
         defaultOpen={defaultOpen}
         onTitleClick={handleTitleClick}
-        showRawParameters={mode === 'input' && showRawParameters}
+        showRawParameters={showRawParameters}
         rawContent={rawToolInput}
         toolCategory={getToolCategory(toolName)}
       >

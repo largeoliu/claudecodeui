@@ -85,6 +85,70 @@ export const CODEX_MODELS = {
   DEFAULT: "gpt-5.4",
 };
 
+const DEFAULT_CODEX_REASONING_EFFORTS = ['low', 'medium', 'high'];
+
+export const CODEX_MODEL_CAPABILITIES = {
+  'gpt-5.4': {
+    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    defaultReasoningEffort: 'high',
+  },
+  'gpt-5.3-codex': {
+    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    defaultReasoningEffort: 'high',
+  },
+  'gpt-5.2-codex': {
+    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    defaultReasoningEffort: 'high',
+  },
+  'gpt-5.2': {
+    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    defaultReasoningEffort: 'high',
+  },
+  'gpt-5.1-codex-max': {
+    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    defaultReasoningEffort: 'high',
+  },
+  o3: {
+    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    defaultReasoningEffort: 'high',
+  },
+  'o4-mini': {
+    supportedReasoningEfforts: ['low', 'medium'],
+    defaultReasoningEffort: 'medium',
+  },
+};
+
+export function getCodexSupportedReasoningEfforts(model) {
+  const capabilities = CODEX_MODEL_CAPABILITIES[model];
+  if (Array.isArray(capabilities?.supportedReasoningEfforts) && capabilities.supportedReasoningEfforts.length > 0) {
+    return capabilities.supportedReasoningEfforts;
+  }
+
+  return DEFAULT_CODEX_REASONING_EFFORTS;
+}
+
+export function getDefaultCodexReasoningEffortForModel(model) {
+  const capabilities = CODEX_MODEL_CAPABILITIES[model];
+  if (typeof capabilities?.defaultReasoningEffort === 'string') {
+    return capabilities.defaultReasoningEffort;
+  }
+
+  const supportedReasoningEfforts = getCodexSupportedReasoningEfforts(model);
+  return supportedReasoningEfforts[supportedReasoningEfforts.length - 1] ?? null;
+}
+
+export function isCodexReasoningEffortSupported(model, effort) {
+  return typeof effort === 'string' && getCodexSupportedReasoningEfforts(model).includes(effort);
+}
+
+export function coerceCodexReasoningEffortForModel(model, effort) {
+  if (isCodexReasoningEffortSupported(model, effort)) {
+    return effort;
+  }
+
+  return getDefaultCodexReasoningEffortForModel(model);
+}
+
 /**
  * Gemini Models
  */

@@ -28,7 +28,7 @@ export default function SidebarProjectsState({
           <div className="space-y-2">
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full bg-primary transition-all duration-300 ease-out"
+                className="h-full bg-white transition-all duration-300 ease-out shadow-[0_0_8px_white]"
                 style={{ width: `${(loadingProgress.current / loadingProgress.total) * 100}%` }}
               />
             </div>

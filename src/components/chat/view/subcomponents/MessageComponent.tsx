@@ -10,6 +10,8 @@ import type {
 import { formatUsageLimitText } from '../../utils/chatFormatting';
 import { getClaudePermissionSuggestion } from '../../utils/chatPermissions';
 import type { Project } from '../../../../types/app';
+import { Terminal, MessageSquare, Info, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { cn } from '../../../../lib/utils';
 import { ToolRenderer, shouldHideToolResult } from '../../tools';
 
 const Markdown = lazy(() =>
@@ -61,6 +63,7 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
       (prevMessage.type === 'tool') ||
       (prevMessage.type === 'error'));
   const isLastInGroup = !nextMessage || nextMessage.type !== message.type;
+  const isUser = message.type === 'user';
   const messageRef = useRef<HTMLDivElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const permissionSuggestion = getClaudePermissionSuggestion(message, provider);
@@ -112,13 +115,18 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
     <div
       ref={messageRef}
       data-message-timestamp={message.timestamp || undefined}
-      className={`chat-message ${message.type} ${isGrouped ? 'grouped' : ''} ${message.type === 'user' ? 'flex justify-end px-3 sm:px-0' : 'px-3 sm:px-0'}`}
+      className={cn(
+        'chat-message animate-stagger-in group flex w-full flex-col gap-0.5 transition-all duration-300',
+        message.type,
+        isGrouped && 'grouped',
+        message.type === 'user' ? 'items-end' : 'items-start'
+      )}
     >
       {message.type === 'user' ? (
         /* User message bubble on the right */
         <div className="flex w-full flex-col items-end sm:w-auto sm:max-w-[85%] md:max-w-2xl lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl">
-          <div className="group min-w-[50px] rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-white shadow-sm sm:px-4">
-            <div className="whitespace-pre-wrap break-words text-sm">
+          <div className="group min-w-[60px] rounded-lg border border-white/10 bg-white/[0.06] px-5 py-2 text-white/90 transition-all duration-300 hover:bg-white/[0.08] hover:border-white/20 shadow-lg shadow-black/10">
+            <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed font-normal tracking-wide">
               {message.content}
             </div>
             {message.images && message.images.length > 0 && (
@@ -136,25 +144,23 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
             )}
           </div>
           {shouldShowTimestamp && (
-            <div className="mt-1 flex w-full justify-end text-[11px] text-gray-400 dark:text-gray-500">
-              <span className="mr-1">{formattedTime}</span>
+            <div className="mt-0.5 flex w-full justify-end text-[10px] font-medium text-white/20 uppercase tracking-wider">
+              <span>{formattedTime}</span>
             </div>
           )}
         </div>
       ) : message.isTaskNotification ? (
         /* Compact task notification on the left */
         <div className="w-full">
-          <div className="flex items-center gap-2 py-0.5">
-            <span className={`inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${message.taskStatus === 'completed' ? 'bg-green-400 dark:bg-green-500' : 'bg-amber-400 dark:bg-amber-500'}`} />
-            <span className="text-xs text-gray-500 dark:text-gray-400">{message.content}</span>
+          <div className="flex items-center gap-2 py-0.5 opacity-60">
+            <span className={`inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${message.taskStatus === 'completed' ? 'bg-white/80' : 'bg-gray-500'}`} />
+            <span className="text-xs text-gray-400">{message.content}</span>
           </div>
         </div>
       ) : (
         /* Claude/Error/Tool messages on the left */
-        <div className="w-full">
-
-          <div className="w-full">
-
+        <div className="w-full flex flex-col items-start max-w-[95%] sm:max-w-[90%] md:max-w-2xl lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl">
+          <div className="w-full px-5 py-1">
             {message.isToolUse ? (
               <>
                 <div className="flex flex-col">
@@ -189,17 +195,17 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
                     // Error results - red error box with content
                     <div
                       id={`tool-result-${message.toolId}`}
-                      className="relative mt-2 scroll-mt-4 rounded border border-red-200/60 bg-red-50/50 p-3 dark:border-red-800/40 dark:bg-red-950/10"
+                      className="relative mt-2 border-l-2 border-white/20 bg-white/5 p-3"
                     >
                       <div className="relative mb-2 flex items-center gap-1.5">
-                        <svg className="h-4 w-4 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="h-4 w-4 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
-                        <span className="text-xs font-medium text-red-700 dark:text-red-300">{t('messageTypes.error')}</span>
+                        <span className="text-xs font-medium text-white/80">{t('messageTypes.error')}</span>
                       </div>
                       <div className="relative text-sm text-red-900 dark:text-red-100">
                          <DeferredMarkdown className="prose prose-sm prose-red max-w-none dark:prose-invert">
-                           {String(message.toolResult.content || '')}
+                            {String(message.toolResult.content || '')}
                          </DeferredMarkdown>
                         {permissionSuggestion && (
                           <div className="mt-4 border-t border-red-200/60 pt-3 dark:border-red-800/60">
@@ -265,6 +271,8 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
                         createDiff={createDiff}
                         selectedProject={selectedProject}
                         autoExpandTools={autoExpandTools}
+                        showRawParameters={showRawParameters}
+                        rawToolInput={typeof message.toolInput === 'string' ? message.toolInput : undefined}
                       />
                     </div>
                   )
@@ -272,15 +280,13 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
               </>
             ) : message.isInteractivePrompt ? (
               // Special handling for interactive prompts
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+              <div className="animate-stagger-in rounded-lg border border-white/10 bg-white/5 p-4">
                 <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-500">
-                    <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                  <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/80 text-zinc-950">
+                    <Terminal className="h-4 w-4" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="mb-3 text-base font-semibold text-amber-900 dark:text-amber-100">
+                    <h4 className="mb-3 text-sm font-semibold text-white/90">
                       {t('interactive.title')}
                     </h4>
                     {(() => {
@@ -290,7 +296,6 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
 
                       // Parse the menu options
                       lines.forEach((line) => {
-                        // Match lines like "❯ 1. Yes" or "  2. No"
                         const optionMatch = line.match(/[❯\s]*(\d+)\.\s+(.+)/);
                         if (optionMatch) {
                           const isSelected = line.includes('❯');
@@ -301,29 +306,32 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
                           });
                         }
                       });
-
                       return (
                         <>
-                          <p className="mb-4 text-sm text-amber-800 dark:text-amber-200">
+                          <p className="mb-4 text-sm text-white/80">
                             {questionLine}
                           </p>
 
                           {/* Option buttons */}
                           <div className="mb-4 space-y-2">
-                            {options.map((option) => (
+                            {options.map((option, idx) => (
                               <button
                                 key={option.number}
-                                className={`w-full rounded-lg border-2 px-4 py-3 text-left transition-all ${option.isSelected
-                                  ? 'border-amber-600 bg-amber-600 text-white shadow-md dark:border-amber-700 dark:bg-amber-700'
-                                  : 'border-amber-300 bg-white text-amber-900 dark:border-amber-700 dark:bg-gray-800 dark:text-amber-100'
-                                  } cursor-not-allowed opacity-75`}
+                                className={cn(
+                                  'w-full border px-4 py-3 text-left transition-all duration-200',
+                                  option.isSelected
+                                    ? 'border-white/20 bg-white/10 text-white shadow-md'
+                                    : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10',
+                                  idx === 0 && "rounded-t-lg",
+                                  idx === options.length - 1 && "rounded-b-lg"
+                                )}
                                 disabled
                               >
                                 <div className="flex items-center gap-3">
-                                  <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold ${option.isSelected
-                                    ? 'bg-white/20'
-                                    : 'bg-amber-100 dark:bg-amber-800/50'
-                                    }`}>
+                                  <span className={cn(
+                                    'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold',
+                                    option.isSelected ? 'bg-white/20' : 'bg-white/10'
+                                  )}>
                                     {option.number}
                                   </span>
                                   <span className="flex-1 text-sm font-medium sm:text-base">
@@ -337,11 +345,11 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
                             ))}
                           </div>
 
-                          <div className="rounded-lg bg-amber-100 p-3 dark:bg-amber-800/30">
-                            <p className="mb-1 text-sm font-medium text-amber-900 dark:text-amber-100">
+                          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                            <p className="mb-1 text-sm font-medium text-white/90">
                               {t('interactive.waiting')}
                             </p>
-                            <p className="text-xs text-amber-800 dark:text-amber-200">
+                            <p className="text-xs text-white/60">
                               {t('interactive.instruction')}
                             </p>
                           </div>
@@ -362,9 +370,9 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
                     <span>{t('thinking.completed', { defaultValue: '思考过程' })}</span>
                   </summary>
                   <div className="mt-2 border-l-2 border-gray-300 pl-4 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
-                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
+                    <DeferredMarkdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
                       {message.content}
-                    </Markdown>
+                    </DeferredMarkdown>
                   </div>
                 </details>
               </div>
@@ -419,9 +427,9 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
 
                   // Normal rendering for non-JSON content
                   return message.type === 'assistant' ? (
-                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
+                    <DeferredMarkdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
                       {content}
-                    </Markdown>
+                    </DeferredMarkdown>
                   ) : (
                     <div className="whitespace-pre-wrap">
                       {content}
@@ -430,13 +438,13 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
                 })()}
               </div>
             )}
-
-            {shouldShowTimestamp && (
-              <div className="mt-1 flex w-full items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
-                <span>{formattedTime}</span>
-              </div>
-            )}
           </div>
+
+          {shouldShowTimestamp && (
+            <div className="mt-0.5 flex w-full items-center gap-2 text-[10px] font-medium text-white/20 uppercase tracking-wider px-2">
+              <span>{formattedTime}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

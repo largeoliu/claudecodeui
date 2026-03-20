@@ -31,7 +31,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
   if (shouldInline) {
     return (
       <code
-        className={`whitespace-pre-wrap break-words rounded-md border border-gray-200 bg-gray-100 px-1.5 py-0.5 font-mono text-[0.9em] text-gray-900 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-100 ${className || ''
+        className={`whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[0.9em] text-white/90 dark:border-white/10 dark:bg-white/5 dark:text-white/90 ${className || ''
           }`}
         {...props}
       >
@@ -44,9 +44,9 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
   const language = normalizeCodeLanguage(match ? match[1] : 'text');
 
   return (
-    <div className="group relative my-2">
+    <div className="group relative my-1">
       {language && language !== 'text' && (
-        <div className="absolute left-3 top-2 z-10 text-xs font-medium uppercase text-gray-400">{language}</div>
+        <div className="absolute left-3 top-2 z-10 text-[10px] font-bold uppercase tracking-wider text-white/30">{language}</div>
       )}
 
       <button
@@ -59,7 +59,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
             }
           })
         }
-        className="absolute right-2 top-2 z-10 rounded-md border border-gray-600 bg-gray-700/80 px-2 py-1 text-xs text-white opacity-0 transition-opacity hover:bg-gray-700 focus:opacity-100 active:opacity-100 group-hover:opacity-100"
+        className="absolute right-2 top-2 z-10 rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-[10px] font-semibold text-white/70 opacity-0 transition-all hover:bg-white/20 focus:opacity-100 active:opacity-100 group-hover:opacity-100 backdrop-blur-sm"
         title={copied ? t('codeBlock.copied') : t('codeBlock.copyCode')}
         aria-label={copied ? t('codeBlock.copied') : t('codeBlock.copyCode')}
       >
@@ -118,7 +118,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
 const markdownComponents = {
   code: CodeBlock,
   blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="my-2 border-l-4 border-gray-300 pl-4 italic text-gray-600 dark:border-gray-600 dark:text-gray-400">
+    <blockquote className="my-1 border-l-4 border-white/20 pl-4 italic text-white/50">
       {children}
     </blockquote>
   ),
@@ -127,18 +127,18 @@ const markdownComponents = {
       {children}
     </a>
   ),
-  p: ({ children }: { children?: React.ReactNode }) => <div className="mb-2 last:mb-0">{children}</div>,
+  p: ({ children }: { children?: React.ReactNode }) => <div className="mb-1 last:mb-0">{children}</div>,
   table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="min-w-full border-collapse border border-gray-200 dark:border-gray-700">{children}</table>
+    <div className="my-1 overflow-x-auto">
+      <table className="min-w-full border-collapse border border-white/10">{children}</table>
     </div>
   ),
-  thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-gray-50 dark:bg-gray-800">{children}</thead>,
+  thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-white/5">{children}</thead>,
   th: ({ children }: { children?: React.ReactNode }) => (
-    <th className="border border-gray-200 px-3 py-2 text-left text-sm font-semibold dark:border-gray-700">{children}</th>
+    <th className="border border-white/10 px-3 py-2 text-left text-sm font-semibold text-white/80">{children}</th>
   ),
   td: ({ children }: { children?: React.ReactNode }) => (
-    <td className="border border-gray-200 px-3 py-2 align-top text-sm dark:border-gray-700">{children}</td>
+    <td className="border border-white/10 px-3 py-2 align-top text-sm text-white/70">{children}</td>
   ),
 };
 

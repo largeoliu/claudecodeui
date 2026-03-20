@@ -148,7 +148,7 @@ export default function AppContent() {
   return (
     <div className="fixed inset-0 flex bg-background">
       {!isMobile ? (
-        <div className="h-full flex-shrink-0 border-r border-border/50">
+        <div className="h-full flex-shrink-0 border-r border-white/[0.04] nav-glass relative z-20">
           <Sidebar {...sidebarSharedProps} processingSessions={processingSessions} />
         </div>
       ) : (
@@ -157,7 +157,7 @@ export default function AppContent() {
             }`}
         >
           <button
-            className="fixed inset-0 bg-background/60 backdrop-blur-sm transition-opacity duration-150 ease-out"
+            className="fixed inset-0 bg-black/40 backdrop-blur-md transition-opacity duration-300 ease-out"
             onClick={(event) => {
               event.stopPropagation();
               setSidebarOpen(false);
@@ -170,7 +170,7 @@ export default function AppContent() {
             aria-label={t('versionUpdate.ariaLabels.closeSidebar')}
           />
           <div
-            className={`relative h-full w-[85vw] max-w-sm transform border-r border-border/40 bg-card transition-transform duration-150 ease-out sm:w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+            className={`relative h-full w-[85vw] max-w-sm transform border-r border-white/10 bg-background transition-transform duration-150 ease-out sm:w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
               }`}
             onClick={(event) => event.stopPropagation()}
             onTouchStart={(event) => event.stopPropagation()}

@@ -54,10 +54,10 @@ export default function MainContentTitle({
   const isProcessing = Boolean(selectedSession?.id && processingSessions.has(selectedSession.id));
 
   return (
-    <div className="scrollbar-hide flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+    <div className="scrollbar-hide flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
       {showSessionIcon && (
-        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
-          <SessionProviderLogo provider={selectedSession?.__provider} className="h-4 w-4" />
+        <div className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
+          <SessionProviderLogo provider={selectedSession?.__provider} className="h-3.5 w-3.5" />
         </div>
       )}
 

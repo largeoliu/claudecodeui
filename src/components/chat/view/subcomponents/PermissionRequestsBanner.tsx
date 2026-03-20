@@ -92,7 +92,7 @@ export default function PermissionRequestsBanner({
         return (
           <div
             key={request.requestId}
-            className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 shadow-sm backdrop-blur-md dark:bg-amber-500/5 transition-all animate-in slide-in-from-bottom-2"
+            className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 shadow-sm backdrop-blur-md dark:bg-amber-500/5 transition-all animate-in slide-in-from-bottom-2"
           >
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
@@ -108,7 +108,7 @@ export default function PermissionRequestsBanner({
               </div>
 
               {/* Human-readable parsed content */}
-              <div className="ml-8 rounded-xl border border-amber-500/20 bg-background/60 p-3 font-mono text-xs text-foreground shadow-sm dark:bg-background/40 max-h-40 overflow-auto">
+              <div className="ml-8 rounded-lg border border-amber-500/20 bg-background/60 p-3 font-mono text-xs text-foreground shadow-sm dark:bg-background/40 max-h-40 overflow-auto">
                 <div className="whitespace-pre-wrap break-all leading-relaxed">
                   {actionDescription}
                 </div>
@@ -130,7 +130,7 @@ export default function PermissionRequestsBanner({
                   type="button"
                   onClick={() => handlePermissionDecision(request.requestId, { allow: true })}
                   disabled={isSubmitting}
-                  className="inline-flex min-w-[100px] items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500/30 active:scale-95"
+                  className="inline-flex min-w-[100px] items-center justify-center gap-2 rounded-lg bg-amber-500/90 px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30 active:scale-95"
                 >
                   {t('permissions.allowOnceButton', { defaultValue: '允许单次' })}
                 </button>
@@ -144,7 +144,7 @@ export default function PermissionRequestsBanner({
                     handlePermissionDecision(matchingRequestIds, { allow: true, rememberEntry: permissionEntry });
                   }}
                   disabled={isSubmitting || !canRemember}
-                  className={`inline-flex min-w-[100px] items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-background/50 px-4 py-2 text-xs font-bold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/20 active:scale-95 ${
+                  className={`inline-flex min-w-[100px] items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-background/50 px-4 py-2 text-xs font-bold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/20 active:scale-95 ${
                     canRemember && !isSubmitting
                       ? 'text-amber-700 hover:bg-amber-500/10 dark:text-amber-300'
                       : 'cursor-not-allowed opacity-50 dark:opacity-40 text-amber-900 dark:text-amber-100'
@@ -161,7 +161,7 @@ export default function PermissionRequestsBanner({
                   type="button"
                   onClick={() => handlePermissionDecision(request.requestId, { allow: false, message: 'User denied tool use' })}
                   disabled={isSubmitting}
-                  className="inline-flex min-w-[80px] items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-background/50 px-4 py-2 text-xs font-bold text-red-600 shadow-sm transition-all hover:bg-red-500/10 focus:outline-none focus:ring-2 focus:ring-red-500/30 active:scale-95 dark:text-red-400"
+                  className="inline-flex min-w-[80px] items-center justify-center gap-2 rounded-lg border border-red-500/30 bg-background/50 px-4 py-2 text-xs font-bold text-red-600 shadow-sm transition-all hover:bg-red-500/10 focus:outline-none focus:ring-2 focus:ring-red-500/30 active:scale-95 dark:text-red-400"
                 >
                   {t('permissions.denyButton', { defaultValue: '拒绝' })}
                 </button>

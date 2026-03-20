@@ -84,8 +84,10 @@ const toAbsolutePath = (projectPath: string, filePath?: string) => {
 };
 
 export const calculateDiff = (oldStr: string, newStr: string): DiffLine[] => {
-  const oldLines = oldStr.split('\n');
-  const newLines = newStr.split('\n');
+  const s1 = typeof oldStr === 'string' ? oldStr : '';
+  const s2 = typeof newStr === 'string' ? newStr : '';
+  const oldLines = s1.split('\n');
+  const newLines = s2.split('\n');
 
   // Use LCS alignment so insertions/deletions don't cascade into a full-file "changed" diff.
   const lcsTable: number[][] = Array.from({ length: oldLines.length + 1 }, () =>

@@ -32,6 +32,7 @@ function renderRealtimeHarness(options: HarnessOptions = {}) {
     onCodexSessionCreated: vi.fn(),
     onNavigateToSession: vi.fn(),
     onWebSocketReconnect: vi.fn(),
+    onCodexInteractiveRequestSettled: vi.fn(),
   };
 
   const pendingViewSessionRef = { current: options.pendingViewSession ?? null };
@@ -269,6 +270,62 @@ describe('useChatRealtimeHandlers', () => {
     expect(harness.result.current.claudeStatus).toBeNull();
     expect(harness.callbacks.onSessionInactive).toHaveBeenCalledWith('session-1');
     expect(harness.callbacks.onSessionNotProcessing).toHaveBeenCalledWith('session-1');
+  });
+
+  it('removes acknowledged Codex requests and re-syncs session state', async () => {
+    const harness = renderRealtimeHarness({
+      provider: 'codex',
+      initialPendingPermissionRequests: [
+        {
+          requestId: 'req-1',
+          provider: 'codex',
+          requestKind: 'approval',
+          toolName: 'Bash',
+          sessionId: 'session-1',
+        },
+      ],
+    });
+
+    await harness.emitMessage({
+      type: 'codex-interactive-response-ack',
+      requestId: 'req-1',
+      requestKind: 'approval',
+    });
+
+    expect(harness.result.current.pendingPermissionRequests).toEqual([]);
+    expect(harness.callbacks.onCodexInteractiveRequestSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an error when a Codex request expires before apply', async () => {
+    const harness = renderRealtimeHarness({
+      provider: 'codex',
+      initialPendingPermissionRequests: [
+        {
+          requestId: 'req-1',
+          provider: 'codex',
+          requestKind: 'approval',
+          toolName: 'Bash',
+          sessionId: 'session-1',
+        },
+      ],
+    });
+
+    await harness.emitMessage({
+      type: 'codex-interactive-response-error',
+      requestId: 'req-1',
+      requestKind: 'approval',
+      code: 'not_found',
+      error: 'Request is no longer pending.',
+    });
+
+    expect(harness.result.current.pendingPermissionRequests).toEqual([]);
+    expect(harness.result.current.chatMessages).toEqual([
+      expect.objectContaining({
+        type: 'error',
+        content: 'This Codex request expired before it could be applied. The session has been refreshed.',
+      }),
+    ]);
+    expect(harness.callbacks.onCodexInteractiveRequestSettled).toHaveBeenCalledTimes(1);
   });
 
   it('clears pending session ids and appends a confirmation when a session is aborted', async () => {

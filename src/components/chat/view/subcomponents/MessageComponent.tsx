@@ -99,7 +99,9 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
 
   const formattedTime = useMemo(() => new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }), [message.timestamp]);
   const nextFormattedTime = useMemo(() => nextMessage ? new Date(nextMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null, [nextMessage]);
-  const shouldShowTimestamp = isLastInGroup && (!nextMessage || formattedTime !== nextFormattedTime);
+  const shouldShowTimestamp = message.type === 'user'
+    || (message.type === 'assistant' && (!nextMessage || nextMessage.type === 'user' || formattedTime !== nextFormattedTime))
+    || (isLastInGroup && (!nextMessage || formattedTime !== nextFormattedTime));
   const shouldHideThinkingMessage = Boolean(message.isThinking && !showThinking);
 
   if (shouldHideThinkingMessage) {

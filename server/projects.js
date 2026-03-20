@@ -1807,23 +1807,106 @@ async function parseCodexSessionFile(filePath) {
   }
 }
 
+// Extract real per-turn timestamps from a Codex rollout JSONL file.
+// Returns a Map<turnId, { userTimestamp, assistantTimestamp }> so each turn's
+// user and assistant messages get the real timestamp from the JSONL log.
+async function extractTurnTimestampsFromRollout(rolloutPath) {
+  const turnTimestamps = new Map();
+
+  if (!rolloutPath) {
+    return turnTimestamps;
+  }
+
+  try {
+    const content = await fs.readFile(rolloutPath, 'utf8');
+
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      try {
+        const event = JSON.parse(trimmed);
+        const ts = event.timestamp;
+        if (!ts) {
+          continue;
+        }
+
+        const { type: eventType, payload } = event;
+        if (!payload) {
+          continue;
+        }
+
+        // task_started contains turn_id — mark the start of a turn
+        if (eventType === 'event_msg' && payload.type === 'task_started' && payload.turn_id) {
+          if (!turnTimestamps.has(payload.turn_id)) {
+            turnTimestamps.set(payload.turn_id, { startTimestamp: ts });
+          }
+          continue;
+        }
+
+        // user_message — capture real user message timestamp
+        if (eventType === 'event_msg' && payload.type === 'user_message') {
+          // Find the most recent turn that doesn't yet have a userTimestamp
+          for (const [, turnTs] of [...turnTimestamps].reverse()) {
+            if (!turnTs.userTimestamp) {
+              turnTs.userTimestamp = ts;
+              break;
+            }
+          }
+          continue;
+        }
+
+        // First agent_message per turn — capture as assistant timestamp
+        if (eventType === 'event_msg' && payload.type === 'agent_message') {
+          for (const [, turnTs] of [...turnTimestamps].reverse()) {
+            if (!turnTs.assistantTimestamp) {
+              turnTs.assistantTimestamp = ts;
+              break;
+            }
+          }
+          continue;
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
+
+    return turnTimestamps;
+  } catch {
+    return turnTimestamps;
+  }
+}
+
 // Get messages for a specific Codex session
 async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
   try {
     const thread = await readCodexThread(sessionId, true);
     const messages = [];
+
+    // Try to extract real per-turn timestamps from the rollout JSONL file.
+    const turnTimestamps = await extractTurnTimestampsFromRollout(thread.path);
+
+    // Fallback: generate monotonically increasing timestamps when no rollout data.
     let sequence = 0;
     const baseTimestamp = (thread.createdAt || Math.floor(Date.now() / 1000)) * 1000;
-    const nextTimestamp = () => new Date(baseTimestamp + sequence++).toISOString();
+    const makeFallbackTimestamp = () =>
+      new Date(baseTimestamp + (sequence++) * 1000).toISOString();
 
-    const pushMessage = (payload) => {
+    const pushMessage = (payload, timestampOverride) => {
       messages.push({
-        timestamp: nextTimestamp(),
+        timestamp: timestampOverride || makeFallbackTimestamp(),
         ...payload,
       });
     };
 
     for (const turn of thread.turns || []) {
+      // Look up real timestamps for this turn from the JSONL file.
+      const turnTs = turnTimestamps.get(turn.id) || {};
+      const userTs = turnTs.userTimestamp || turnTs.startTimestamp || null;
+      const assistantTs = turnTs.assistantTimestamp || null;
+
       for (const item of turn.items || []) {
         if (item.type === 'userMessage') {
           const text = (item.content || [])
@@ -1839,7 +1922,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'user',
                 content: text,
               },
-            });
+            }, userTs);
           }
           continue;
         }
@@ -1852,7 +1935,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'assistant',
                 content: item.text,
               },
-            });
+            }, assistantTs);
           }
           continue;
         }
@@ -1865,7 +1948,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'assistant',
                 content: item.text,
               },
-            });
+            }, assistantTs);
           }
           continue;
         }

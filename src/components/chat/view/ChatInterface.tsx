@@ -414,6 +414,7 @@ function ChatInterface({
           handleGrantToolPermission={handleGrantToolPermission}
           claudeStatus={claudeStatus}
           isLoading={isLoading}
+          canAbortSession={canAbortSession}
           onAbortSession={handleAbortSession}
           provider={provider}
           permissionMode={permissionMode}

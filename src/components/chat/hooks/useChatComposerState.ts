@@ -581,11 +581,11 @@ export function useChatComposerState({
 
       setChatMessages((previous) => [...previous, userMessage]);
       setIsLoading(true); // Processing banner starts
-      setCanAbortSession(true);
+      setCanAbortSession(false);
       setClaudeStatus({
         text: 'Processing',
         tokens: 0,
-        can_interrupt: true,
+        can_interrupt: false,
       });
 
       setIsUserScrolledUp(false);

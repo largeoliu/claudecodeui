@@ -151,7 +151,7 @@ export function useSidebarController({
     if (projects.length > 0 && !isLoading) {
       const loadedProjects = new Set<string>();
       projects.forEach((project) => {
-        if (project.sessions && project.sessions.length >= 0) {
+        if (Array.isArray(project.sessions)) {
           loadedProjects.add(project.name);
         }
       });
@@ -486,9 +486,11 @@ export function useSidebarController({
 
   const loadMoreSessions = useCallback(
     async (project: Project) => {
+      const hasInitialSessions = initialSessionsLoaded.has(project.name);
       const hasMoreOverride = projectHasMoreOverrides[project.name];
       const canLoadMore =
-        hasMoreOverride !== undefined ? hasMoreOverride : project.sessionMeta?.hasMore === true;
+        !hasInitialSessions ||
+        (hasMoreOverride !== undefined ? hasMoreOverride : project.sessionMeta?.hasMore === true);
       if (!canLoadMore || loadingSessions[project.name]) {
         return;
       }
@@ -497,7 +499,9 @@ export function useSidebarController({
 
       try {
         const currentSessionCount =
-          (project.sessions?.length || 0) + (additionalSessions[project.name]?.length || 0);
+          hasInitialSessions
+            ? (project.sessions?.length || 0) + (additionalSessions[project.name]?.length || 0)
+            : 0;
         const response = await api.sessions(project.name, 5, currentSessionCount);
 
         if (!response.ok) {
@@ -511,21 +515,46 @@ export function useSidebarController({
 
         setAdditionalSessions((prev) => ({
           ...prev,
-          [project.name]: [...(prev[project.name] || []), ...(result.sessions || [])],
+          [project.name]: hasInitialSessions
+            ? [...(prev[project.name] || []), ...(result.sessions || [])]
+            : [...(result.sessions || [])],
         }));
 
-        if (result.hasMore === false) {
-          // Keep hasMore state in local hook state instead of mutating the project prop object.
-          setProjectHasMoreOverrides((prev) => ({ ...prev, [project.name]: false }));
-        }
+        setInitialSessionsLoaded((prev) => {
+          if (prev.has(project.name)) {
+            return prev;
+          }
+
+          const next = new Set(prev);
+          next.add(project.name);
+          return next;
+        });
+
+        setProjectHasMoreOverrides((prev) => ({
+          ...prev,
+          [project.name]: result.hasMore === true,
+        }));
       } catch (error) {
         console.error('Error loading more sessions:', error);
       } finally {
         setLoadingSessions((prev) => ({ ...prev, [project.name]: false }));
       }
     },
-    [additionalSessions, loadingSessions, projectHasMoreOverrides],
+    [additionalSessions, initialSessionsLoaded, loadingSessions, projectHasMoreOverrides],
   );
+
+  useEffect(() => {
+    const expandedProject = projects.find((project) => expandedProjects.has(project.name));
+    if (!expandedProject) {
+      return;
+    }
+
+    if (initialSessionsLoaded.has(expandedProject.name) || loadingSessions[expandedProject.name]) {
+      return;
+    }
+
+    void loadMoreSessions(expandedProject);
+  }, [expandedProjects, initialSessionsLoaded, loadMoreSessions, loadingSessions, projects]);
 
   const handleProjectSelect = useCallback(
     (project: Project) => {

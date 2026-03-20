@@ -74,7 +74,7 @@ import {
   readCodexThread,
 } from './openai-codex.js';
 
-const PROJECTS_CACHE_TTL_MS = 3000;
+const PROJECTS_CACHE_TTL_MS = 30000;
 const projectsCache = new Map();
 const inFlightProjectsRequests = new Map();
 
@@ -97,6 +97,32 @@ function getFallbackDisplayName(projectName, actualProjectDir = null) {
 
   const segments = normalized.split('/').filter(Boolean);
   return segments[segments.length - 1] || projectName;
+}
+
+function toTimestampMs(value) {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.getTime() : 0;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function toIsoTimestamp(value) {
+  const timestampMs = toTimestampMs(value);
+  return timestampMs > 0 ? new Date(timestampMs).toISOString() : null;
+}
+
+function getLatestTimestamp(timestamps) {
+  return timestamps.reduce((latest, value) => Math.max(latest, toTimestampMs(value)), 0);
 }
 
 // Import TaskMaster detection functions
@@ -414,13 +440,85 @@ async function extractProjectDirectory(projectName) {
   }
 }
 
+async function getClaudeProjectLastActivity(projectName) {
+  const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
+
+  try {
+    const files = await fs.readdir(projectDir);
+    const jsonlFiles = files.filter((file) => file.endsWith('.jsonl') && !file.startsWith('agent-'));
+
+    if (jsonlFiles.length === 0) {
+      return null;
+    }
+
+    const timestamps = await Promise.all(
+      jsonlFiles.map(async (file) => {
+        try {
+          const stats = await fs.stat(path.join(projectDir, file));
+          return stats.mtimeMs;
+        } catch {
+          return 0;
+        }
+      })
+    );
+
+    return toIsoTimestamp(getLatestTimestamp(timestamps));
+  } catch {
+    return null;
+  }
+}
+
+async function getCursorProjectLastActivity(projectPath) {
+  if (!normalizeComparablePath(projectPath)) {
+    return null;
+  }
+
+  const cwdId = crypto.createHash('md5').update(projectPath).digest('hex');
+  const cursorChatsPath = path.join(os.homedir(), '.cursor', 'chats', cwdId);
+
+  try {
+    const sessionDirs = await fs.readdir(cursorChatsPath);
+    if (sessionDirs.length === 0) {
+      return null;
+    }
+
+    const timestamps = await Promise.all(
+      sessionDirs.map(async (sessionId) => {
+        try {
+          const stats = await fs.stat(path.join(cursorChatsPath, sessionId, 'store.db'));
+          return stats.mtimeMs;
+        } catch {
+          return 0;
+        }
+      })
+    );
+
+    return toIsoTimestamp(getLatestTimestamp(timestamps));
+  } catch {
+    return null;
+  }
+}
+
+async function getProjectLastActivity(projectName, projectPath, options = {}) {
+  const { codexIndexRef = null, geminiIndexRef = null } = options;
+  const timestamps = await Promise.all([
+    getClaudeProjectLastActivity(projectName),
+    getCursorProjectLastActivity(projectPath),
+    getCodexProjectLastActivity(projectPath, codexIndexRef),
+    getGeminiProjectLastActivity(projectPath, geminiIndexRef),
+  ]);
+
+  return toIsoTimestamp(getLatestTimestamp(timestamps));
+}
+
 async function buildProjects(progressCallback = null, options = {}) {
   const { lightweight = false } = options;
   const claudeDir = path.join(os.homedir(), '.claude', 'projects');
   const config = await loadProjectConfig();
   const projects = [];
   const existingProjects = new Set();
-  const codexSessionsIndexRef = { sessionsByProject: null };
+  const codexThreadsIndexRef = { threadsIndex: null };
+  const geminiCliActivityIndexRef = { activityByProject: null };
   let totalProjects = 0;
   let processedProjects = 0;
   let directories = [];
@@ -465,6 +563,10 @@ async function buildProjects(progressCallback = null, options = {}) {
         ? getFallbackDisplayName(entry.name, actualProjectDir)
         : await generateDisplayName(entry.name, actualProjectDir);
       const fullPath = actualProjectDir;
+      const lastActivity = await getProjectLastActivity(entry.name, actualProjectDir, {
+        codexIndexRef: codexThreadsIndexRef,
+        geminiIndexRef: geminiCliActivityIndexRef,
+      });
 
       const project = {
         name: entry.name,
@@ -472,34 +574,37 @@ async function buildProjects(progressCallback = null, options = {}) {
         displayName: customName || autoDisplayName,
         fullPath: fullPath,
         isCustomName: !!customName,
-        sessions: [],
-        cursorSessions: [],
-        codexSessions: [],
-        geminiSessions: [],
-        sessionMeta: {
-          hasMore: false,
-          total: 0
-        }
+        lastActivity,
+        ...(lightweight ? {} : {
+          sessions: [],
+          cursorSessions: [],
+          codexSessions: [],
+          geminiSessions: [],
+          sessionMeta: {
+            hasMore: false,
+            total: 0
+          }
+        })
       };
 
-      // Try to get sessions for this project (just first 5 for performance)
-      try {
-        const sessionResult = await getSessions(entry.name, 5, 0);
-        project.sessions = sessionResult.sessions || [];
-        project.sessionMeta = {
-          hasMore: sessionResult.hasMore,
-          total: sessionResult.total
-        };
-      } catch (e) {
-        console.warn(`Could not load sessions for project ${entry.name}:`, e.message);
-        project.sessionMeta = {
-          hasMore: false,
-          total: 0
-        };
-      }
-      applyCustomSessionNames(project.sessions, 'claude');
-
       if (!lightweight) {
+        // Try to get sessions for this project (just first 5 for performance)
+        try {
+          const sessionResult = await getSessions(entry.name, 5, 0);
+          project.sessions = sessionResult.sessions || [];
+          project.sessionMeta = {
+            hasMore: sessionResult.hasMore,
+            total: sessionResult.total
+          };
+        } catch (e) {
+          console.warn(`Could not load sessions for project ${entry.name}:`, e.message);
+          project.sessionMeta = {
+            hasMore: false,
+            total: 0
+          };
+        }
+        applyCustomSessionNames(project.sessions, 'claude');
+
         // Also fetch Cursor sessions for this project
         try {
           project.cursorSessions = await getCursorSessions(actualProjectDir);
@@ -512,7 +617,7 @@ async function buildProjects(progressCallback = null, options = {}) {
         // Also fetch Codex sessions for this project
         try {
           project.codexSessions = await getCodexSessions(actualProjectDir, {
-            indexRef: codexSessionsIndexRef,
+            indexRef: codexThreadsIndexRef,
           });
         } catch (e) {
           console.warn(`Could not load Codex sessions for project ${entry.name}:`, e.message);
@@ -604,17 +709,39 @@ async function buildProjects(progressCallback = null, options = {}) {
         fullPath: actualProjectDir,
         isCustomName: !!projectConfig.displayName,
         isManuallyAdded: true,
-        sessions: [],
-        geminiSessions: [],
-        sessionMeta: {
-          hasMore: false,
-          total: 0
-        },
-        cursorSessions: [],
-        codexSessions: []
+        lastActivity: await getProjectLastActivity(projectName, actualProjectDir, {
+          codexIndexRef: codexThreadsIndexRef,
+          geminiIndexRef: geminiCliActivityIndexRef,
+        }),
+        ...(lightweight ? {} : {
+          sessions: [],
+          geminiSessions: [],
+          sessionMeta: {
+            hasMore: false,
+            total: 0
+          },
+          cursorSessions: [],
+          codexSessions: []
+        })
       };
 
       if (!lightweight) {
+        try {
+          const sessionResult = await getSessions(projectName, 5, 0);
+          project.sessions = sessionResult.sessions || [];
+          project.sessionMeta = {
+            hasMore: sessionResult.hasMore,
+            total: sessionResult.total
+          };
+        } catch (e) {
+          console.warn(`Could not load sessions for manual project ${projectName}:`, e.message);
+          project.sessionMeta = {
+            hasMore: false,
+            total: 0
+          };
+        }
+        applyCustomSessionNames(project.sessions, 'claude');
+
         // Try to fetch Cursor sessions for manual projects too
         try {
           project.cursorSessions = await getCursorSessions(actualProjectDir);
@@ -626,7 +753,7 @@ async function buildProjects(progressCallback = null, options = {}) {
         // Try to fetch Codex sessions for manual projects too
         try {
           project.codexSessions = await getCodexSessions(actualProjectDir, {
-            indexRef: codexSessionsIndexRef,
+            indexRef: codexThreadsIndexRef,
           });
         } catch (e) {
           console.warn(`Could not load Codex sessions for manual project ${projectName}:`, e.message);
@@ -1345,6 +1472,7 @@ async function addProjectManually(projectPath, displayName = null) {
     path: absolutePath,
     fullPath: absolutePath,
     displayName: displayName || await generateDisplayName(projectName, absolutePath),
+    lastActivity: null,
     isManuallyAdded: true,
     sessions: [],
     cursorSessions: []
@@ -1494,8 +1622,9 @@ async function findCodexJsonlFiles(dir) {
   return files;
 }
 
-async function buildCodexSessionsIndex() {
+async function buildCodexThreadsIndex() {
   const sessionsByProject = new Map();
+  const lastActivityByProject = new Map();
 
   try {
     const { data: threads } = await listCodexThreads({ pageSize: 200 });
@@ -1510,11 +1639,12 @@ async function buildCodexSessionsIndex() {
       const summary = preview
         ? (preview.length > 80 ? `${preview.slice(0, 80)}...` : preview)
         : 'Codex Session';
+      const lastActivityMs = (thread.updatedAt || thread.createdAt || Date.now() / 1000) * 1000;
       const session = {
         id: thread.id,
         summary,
         messageCount: 0,
-        lastActivity: new Date(((thread.updatedAt || thread.createdAt || Date.now() / 1000) * 1000)),
+        lastActivity: new Date(lastActivityMs),
         cwd: thread.cwd,
         model: thread.modelProvider,
         filePath: thread.path,
@@ -1527,6 +1657,11 @@ async function buildCodexSessionsIndex() {
       }
 
       sessionsByProject.get(normalizedProjectPath).push(session);
+
+      const existingLastActivity = lastActivityByProject.get(normalizedProjectPath) || 0;
+      if (lastActivityMs > existingLastActivity) {
+        lastActivityByProject.set(normalizedProjectPath, lastActivityMs);
+      }
     }
   } catch (error) {
     console.warn('Could not build Codex interactive sessions index:', error.message);
@@ -1536,7 +1671,7 @@ async function buildCodexSessionsIndex() {
     sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
   }
 
-  return sessionsByProject;
+  return { sessionsByProject, lastActivityByProject };
 }
 
 // Fetch Codex sessions for a given project path
@@ -1548,12 +1683,12 @@ async function getCodexSessions(projectPath, options = {}) {
       return [];
     }
 
-    if (indexRef && !indexRef.sessionsByProject) {
-      indexRef.sessionsByProject = await buildCodexSessionsIndex();
+    if (indexRef && !indexRef.threadsIndex) {
+      indexRef.threadsIndex = await buildCodexThreadsIndex();
     }
 
-    const sessionsByProject = indexRef?.sessionsByProject || await buildCodexSessionsIndex();
-    const sessions = sessionsByProject.get(normalizedProjectPath) || [];
+    const threadsIndex = indexRef?.threadsIndex || await buildCodexThreadsIndex();
+    const sessions = threadsIndex.sessionsByProject.get(normalizedProjectPath) || [];
 
     // Return limited sessions for performance (0 = unlimited for deletion)
     return limit > 0 ? sessions.slice(0, limit) : [...sessions];
@@ -1561,6 +1696,25 @@ async function getCodexSessions(projectPath, options = {}) {
   } catch (error) {
     console.error('Error fetching Codex sessions:', error);
     return [];
+  }
+}
+
+async function getCodexProjectLastActivity(projectPath, indexRef = null) {
+  const normalizedProjectPath = normalizeComparablePath(projectPath);
+  if (!normalizedProjectPath) {
+    return null;
+  }
+
+  try {
+    if (indexRef && !indexRef.threadsIndex) {
+      indexRef.threadsIndex = await buildCodexThreadsIndex();
+    }
+
+    const threadsIndex = indexRef?.threadsIndex || await buildCodexThreadsIndex();
+    return toIsoTimestamp(threadsIndex.lastActivityByProject.get(normalizedProjectPath) || 0);
+  } catch (error) {
+    console.warn('Could not determine Codex project activity:', error.message);
+    return null;
   }
 }
 
@@ -2525,6 +2679,84 @@ async function getGeminiCliSessions(projectPath) {
   return sessions.sort((a, b) =>
     new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0)
   );
+}
+
+async function buildGeminiCliActivityIndex() {
+  const activityByProject = new Map();
+  const geminiTmpDir = path.join(os.homedir(), '.gemini', 'tmp');
+
+  try {
+    const projectDirs = await fs.readdir(geminiTmpDir);
+
+    for (const projectDir of projectDirs) {
+      const projectRootFile = path.join(geminiTmpDir, projectDir, '.project_root');
+      let projectRoot;
+      try {
+        projectRoot = (await fs.readFile(projectRootFile, 'utf8')).trim();
+      } catch {
+        continue;
+      }
+
+      const normalizedProjectPath = normalizeComparablePath(projectRoot);
+      if (!normalizedProjectPath) {
+        continue;
+      }
+
+      const chatsDir = path.join(geminiTmpDir, projectDir, 'chats');
+      let chatFiles;
+      try {
+        chatFiles = await fs.readdir(chatsDir);
+      } catch {
+        continue;
+      }
+
+      const timestamps = await Promise.all(
+        chatFiles
+          .filter((chatFile) => chatFile.endsWith('.json'))
+          .map(async (chatFile) => {
+            try {
+              const stats = await fs.stat(path.join(chatsDir, chatFile));
+              return stats.mtimeMs;
+            } catch {
+              return 0;
+            }
+          })
+      );
+
+      const latestChatActivity = getLatestTimestamp(timestamps);
+      const existingActivity = activityByProject.get(normalizedProjectPath) || 0;
+      if (latestChatActivity > existingActivity) {
+        activityByProject.set(normalizedProjectPath, latestChatActivity);
+      }
+    }
+  } catch {
+    return activityByProject;
+  }
+
+  return activityByProject;
+}
+
+async function getGeminiProjectLastActivity(projectPath, indexRef = null) {
+  const normalizedProjectPath = normalizeComparablePath(projectPath);
+  if (!normalizedProjectPath) {
+    return null;
+  }
+
+  const uiSessions = sessionManager.getProjectSessions(projectPath) || [];
+  const uiLastActivity = uiSessions.length > 0 ? uiSessions[0].lastActivity : null;
+
+  try {
+    if (indexRef && !indexRef.activityByProject) {
+      indexRef.activityByProject = await buildGeminiCliActivityIndex();
+    }
+
+    const activityByProject = indexRef?.activityByProject || await buildGeminiCliActivityIndex();
+    const cliLastActivity = activityByProject.get(normalizedProjectPath) || 0;
+    return toIsoTimestamp(getLatestTimestamp([uiLastActivity, cliLastActivity]));
+  } catch (error) {
+    console.warn('Could not determine Gemini project activity:', error.message);
+    return toIsoTimestamp(uiLastActivity);
+  }
 }
 
 async function getGeminiCliSessionMessages(sessionId) {

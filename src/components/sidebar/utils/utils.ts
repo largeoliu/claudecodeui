@@ -133,6 +133,11 @@ export const getProjectLastActivity = (
   project: Project,
   additionalSessions: AdditionalSessionsByProject,
 ): Date => {
+  const projectActivity = project.lastActivity ? new Date(project.lastActivity) : null;
+  if (projectActivity && !Number.isNaN(projectActivity.getTime())) {
+    return projectActivity;
+  }
+
   const sessions = getAllSessions(project, additionalSessions);
   if (sessions.length === 0) {
     return new Date(0);

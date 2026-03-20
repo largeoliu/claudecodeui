@@ -107,41 +107,6 @@ function ChatInterface({
   }, []);
 
   const {
-    provider,
-    setProvider,
-    claudeModel,
-    setClaudeModel,
-    codexModel,
-    setCodexModel,
-    codexInteractionMode,
-    setCodexInteractionMode,
-    codexApprovalPolicy,
-    setCodexApprovalPolicy,
-    codexReasoningEffort,
-    setCodexReasoningEffort,
-    geminiModel,
-    setGeminiModel,
-    permissionMode,
-    pendingPermissionRequests,
-    setPendingPermissionRequests,
-    cyclePermissionMode,
-  } = useChatProviderState({
-    selectedSession,
-  });
-
-  const requestPendingPermissions = useCallback(() => {
-    if (!selectedSession?.id) {
-      return;
-    }
-
-    sendMessage({
-      type: 'get-pending-permissions',
-      sessionId: selectedSession.id,
-      provider: selectedSession.__provider || provider,
-    });
-  }, [provider, selectedSession, sendMessage]);
-
-  const {
     chatMessages,
     setChatMessages,
     isLoading,
@@ -189,6 +154,44 @@ function ChatInterface({
     resetStreamingState,
     pendingViewSessionRef,
   });
+
+  const {
+    provider,
+    setProvider,
+    claudeModel,
+    setClaudeModel,
+    codexModel,
+    setCodexModel,
+    codexInteractionMode,
+    setCodexInteractionMode,
+    codexApprovalPolicy,
+    setCodexApprovalPolicy,
+    codexReasoningEffort,
+    setCodexReasoningEffort,
+    handleCodexSessionCreated,
+    geminiModel,
+    setGeminiModel,
+    permissionMode,
+    pendingPermissionRequests,
+    setPendingPermissionRequests,
+    cyclePermissionMode,
+  } = useChatProviderState({
+    selectedProject,
+    selectedSession,
+    currentSessionId,
+  });
+
+  const requestPendingPermissions = useCallback(() => {
+    if (!selectedSession?.id) {
+      return;
+    }
+
+    sendMessage({
+      type: 'get-pending-permissions',
+      sessionId: selectedSession.id,
+      provider: selectedSession.__provider || provider,
+    });
+  }, [provider, selectedSession, sendMessage]);
 
   const {
     input,
@@ -317,6 +320,7 @@ function ChatInterface({
     onSessionProcessing,
     onSessionNotProcessing,
     onReplaceTemporarySession,
+    onCodexSessionCreated: handleCodexSessionCreated,
     onNavigateToSession,
     onWebSocketReconnect: handleWebSocketReconnect,
   });

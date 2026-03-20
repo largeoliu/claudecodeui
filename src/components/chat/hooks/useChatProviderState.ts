@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { authenticatedFetch } from '../../../utils/api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
 import type {
   CodexApprovalPolicy,
@@ -7,7 +6,7 @@ import type {
   PendingPermissionRequest,
   PermissionMode,
 } from '../types/types';
-import type { ProjectSession, SessionProvider } from '../../../types/app';
+import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
 import { safeLocalStorage } from '../utils/chatStorage';
 import {
   DEFAULT_CODEX_REASONING_EFFORT,
@@ -20,6 +19,15 @@ const DEFAULT_CODEX_INTERACTION_MODE: CodexInteractionMode = 'edit';
 const DEFAULT_CODEX_APPROVAL_POLICY: CodexApprovalPolicy = 'on-request';
 const CODEX_INTERACTION_MODE_PREFIX = 'codex-interaction-mode-';
 const CODEX_APPROVAL_POLICY_PREFIX = 'codex-approval-policy-';
+const CODEX_SESSION_SETTINGS_PREFIX = 'chat-session-settings:codex:';
+const CODEX_DRAFT_SETTINGS_PREFIX = 'chat-draft-settings:';
+
+type CodexSettingsState = {
+  model: string;
+  interactionMode: CodexInteractionMode;
+  approvalPolicy: CodexApprovalPolicy;
+  reasoningEffort: CodexReasoningEffort;
+};
 
 const isCodexInteractionMode = (value: unknown): value is CodexInteractionMode => (
   value === 'edit' || value === 'plan'
@@ -29,9 +37,14 @@ const isCodexApprovalPolicy = (value: unknown): value is CodexApprovalPolicy => 
   value === 'untrusted' || value === 'on-request' || value === 'never'
 );
 
-const getStoredProvider = (): SessionProvider => (
-  (safeLocalStorage.getItem('selected-provider') as SessionProvider) || 'claude'
+const isSessionProvider = (value: unknown): value is SessionProvider => (
+  value === 'claude' || value === 'codex' || value === 'gemini'
 );
+
+const getStoredProvider = (): SessionProvider => {
+  const storedProvider = safeLocalStorage.getItem('selected-provider');
+  return isSessionProvider(storedProvider) ? storedProvider : 'claude';
+};
 
 const readStoredCodexSettings = (): {
   interactionMode?: unknown;
@@ -72,63 +85,235 @@ const getDefaultCodexReasoningEffort = (): CodexReasoningEffort => {
     : DEFAULT_CODEX_REASONING_EFFORT;
 };
 
-interface UseChatProviderStateArgs {
+const isConcreteSessionId = (value: string | null | undefined): value is string => (
+  typeof value === 'string' && value.length > 0 && !value.startsWith('new-session-')
+);
+
+const getProjectKey = (selectedProject: Project | null): string | null => (
+  selectedProject?.fullPath || selectedProject?.path || selectedProject?.name || null
+);
+
+const getCodexSessionSettingsKey = (sessionId: string) => `${CODEX_SESSION_SETTINGS_PREFIX}${sessionId}`;
+
+const getCodexDraftSettingsKey = (projectKey: string) => `${CODEX_DRAFT_SETTINGS_PREFIX}${projectKey}:codex`;
+
+const readJsonStorage = (key: string): Record<string, unknown> | null => {
+  const raw = safeLocalStorage.getItem(key);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeJsonStorage = (key: string, value: Record<string, unknown>) => {
+  safeLocalStorage.setItem(key, JSON.stringify({
+    ...value,
+    lastUpdated: new Date().toISOString(),
+  }));
+};
+
+const readLegacyCodexSettings = (sessionId?: string | null): CodexSettingsState => {
+  const globalSettings = readStoredCodexSettings();
+  const savedInteractionMode = isConcreteSessionId(sessionId)
+    ? safeLocalStorage.getItem(`${CODEX_INTERACTION_MODE_PREFIX}${sessionId}`)
+    : null;
+  const savedApprovalPolicy = isConcreteSessionId(sessionId)
+    ? safeLocalStorage.getItem(`${CODEX_APPROVAL_POLICY_PREFIX}${sessionId}`)
+    : null;
+
+  return {
+    model: safeLocalStorage.getItem('codex-model') || CODEX_MODELS.DEFAULT,
+    interactionMode: isCodexInteractionMode(savedInteractionMode)
+      ? savedInteractionMode
+      : getDefaultCodexInteractionMode(),
+    approvalPolicy: isCodexApprovalPolicy(savedApprovalPolicy)
+      ? savedApprovalPolicy
+      : getDefaultCodexApprovalPolicy(),
+    reasoningEffort: isCodexReasoningEffort(globalSettings.reasoningEffort)
+      ? globalSettings.reasoningEffort
+      : DEFAULT_CODEX_REASONING_EFFORT,
+  };
+};
+
+const normalizeCodexSettings = (
+  settings: Record<string, unknown> | null,
+  fallback: CodexSettingsState,
+): CodexSettingsState => ({
+  model:
+    typeof settings?.model === 'string' && settings.model.trim()
+      ? settings.model
+      : fallback.model,
+  interactionMode: isCodexInteractionMode(settings?.interactionMode)
+    ? settings.interactionMode
+    : fallback.interactionMode,
+  approvalPolicy: isCodexApprovalPolicy(settings?.approvalPolicy)
+    ? settings.approvalPolicy
+    : fallback.approvalPolicy,
+  reasoningEffort: isCodexReasoningEffort(settings?.reasoningEffort)
+    ? settings.reasoningEffort
+    : fallback.reasoningEffort,
+});
+
+const getPendingSessionId = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const pendingSessionId = sessionStorage.getItem('pendingSessionId');
+  return isConcreteSessionId(pendingSessionId) ? pendingSessionId : null;
+};
+
+const resolveActiveCodexSessionId = ({
+  provider,
+  selectedSession,
+  currentSessionId,
+}: {
+  provider: SessionProvider;
   selectedSession: ProjectSession | null;
+  currentSessionId?: string | null;
+}): string | null => {
+  if (selectedSession?.__provider === 'codex' && isConcreteSessionId(selectedSession.id)) {
+    return selectedSession.id;
+  }
+
+  if (provider !== 'codex') {
+    return null;
+  }
+
+  if (isConcreteSessionId(currentSessionId)) {
+    return currentSessionId;
+  }
+
+  return getPendingSessionId();
+};
+
+interface UseChatProviderStateArgs {
+  selectedProject?: Project | null;
+  selectedSession: ProjectSession | null;
+  currentSessionId?: string | null;
 }
 
-export function useChatProviderState({ selectedSession }: UseChatProviderStateArgs) {
+export function useChatProviderState({
+  selectedProject = null,
+  selectedSession,
+  currentSessionId = null,
+}: UseChatProviderStateArgs) {
   const [provider, setProvider] = useState<SessionProvider>(getStoredProvider);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
-  const [codexInteractionMode, setCodexInteractionModeState] = useState<CodexInteractionMode>(() => (
-    getStoredProvider() === 'codex' ? getDefaultCodexInteractionMode() : DEFAULT_CODEX_INTERACTION_MODE
-  ));
-  const [codexApprovalPolicy, setCodexApprovalPolicyState] = useState<CodexApprovalPolicy>(() => (
-    getStoredProvider() === 'codex' ? getDefaultCodexApprovalPolicy() : DEFAULT_CODEX_APPROVAL_POLICY
-  ));
-  const [codexReasoningEffort, setCodexReasoningEffort] = useState<CodexReasoningEffort>(getDefaultCodexReasoningEffort);
   const [pendingPermissionRequests, setPendingPermissionRequests] = useState<PendingPermissionRequest[]>([]);
   const [claudeModel, setClaudeModel] = useState<string>(() => (
-    localStorage.getItem('claude-model') || CLAUDE_MODELS.DEFAULT
-  ));
-  const [codexModel, setCodexModel] = useState<string>(() => (
-    localStorage.getItem('codex-model') || CODEX_MODELS.DEFAULT
+    safeLocalStorage.getItem('claude-model') || CLAUDE_MODELS.DEFAULT
   ));
   const [geminiModel, setGeminiModel] = useState<string>(() => (
-    localStorage.getItem('gemini-model') || GEMINI_MODELS.DEFAULT
+    safeLocalStorage.getItem('gemini-model') || GEMINI_MODELS.DEFAULT
   ));
+  const [codexModel, setCodexModelState] = useState<string>(() => (
+    safeLocalStorage.getItem('codex-model') || CODEX_MODELS.DEFAULT
+  ));
+  const [codexInteractionMode, setCodexInteractionModeState] = useState<CodexInteractionMode>(getDefaultCodexInteractionMode);
+  const [codexApprovalPolicy, setCodexApprovalPolicyState] = useState<CodexApprovalPolicy>(getDefaultCodexApprovalPolicy);
+  const [codexReasoningEffort, setCodexReasoningEffortState] = useState<CodexReasoningEffort>(getDefaultCodexReasoningEffort);
 
   const lastProviderRef = useRef(provider);
-  const hasPersistedCodexReasoningRef = useRef(false);
+  const projectKey = useMemo(() => getProjectKey(selectedProject), [selectedProject]);
 
-  useEffect(() => {
-    if (!selectedSession?.id) {
-      if (provider === 'codex') {
-        setCodexInteractionModeState(getDefaultCodexInteractionMode());
-        setCodexApprovalPolicyState(getDefaultCodexApprovalPolicy());
-      }
+  const applyCodexSettings = useCallback((settings: CodexSettingsState) => {
+    setCodexModelState(settings.model);
+    setCodexInteractionModeState(settings.interactionMode);
+    setCodexApprovalPolicyState(settings.approvalPolicy);
+    setCodexReasoningEffortState(settings.reasoningEffort);
+  }, []);
+
+  const readCurrentCodexSettings = useCallback((): CodexSettingsState => {
+    const resolvedSessionId = resolveActiveCodexSessionId({
+      provider,
+      selectedSession,
+      currentSessionId,
+    });
+
+    if (resolvedSessionId) {
+      return normalizeCodexSettings(
+        readJsonStorage(getCodexSessionSettingsKey(resolvedSessionId)),
+        readLegacyCodexSettings(resolvedSessionId),
+      );
+    }
+
+    if (provider === 'codex' && projectKey) {
+      return normalizeCodexSettings(
+        readJsonStorage(getCodexDraftSettingsKey(projectKey)),
+        readLegacyCodexSettings(null),
+      );
+    }
+
+    return readLegacyCodexSettings(null);
+  }, [currentSessionId, projectKey, provider, selectedSession]);
+
+  const persistCodexSettings = useCallback((partial: Partial<CodexSettingsState>) => {
+    const resolvedSessionId = resolveActiveCodexSessionId({
+      provider,
+      selectedSession,
+      currentSessionId,
+    });
+
+    if (resolvedSessionId) {
+      const sessionKey = getCodexSessionSettingsKey(resolvedSessionId);
+      const nextSettings = {
+        ...readCurrentCodexSettings(),
+        ...partial,
+      };
+      writeJsonStorage(sessionKey, nextSettings);
+      applyCodexSettings(nextSettings);
       return;
+    }
+
+    if (provider === 'codex' && projectKey) {
+      const draftKey = getCodexDraftSettingsKey(projectKey);
+      const nextSettings = {
+        ...readCurrentCodexSettings(),
+        ...partial,
+      };
+      writeJsonStorage(draftKey, nextSettings);
+      applyCodexSettings(nextSettings);
+      return;
+    }
+
+    applyCodexSettings({
+      ...readCurrentCodexSettings(),
+      ...partial,
+    });
+  }, [applyCodexSettings, currentSessionId, projectKey, provider, readCurrentCodexSettings, selectedSession]);
+
+  const handleCodexSessionCreated = useCallback((sessionId?: string | null) => {
+    if (!isConcreteSessionId(sessionId)) {
+      return;
+    }
+
+    const legacyFallback = readLegacyCodexSettings(sessionId);
+    let nextSettings = normalizeCodexSettings(
+      readJsonStorage(getCodexSessionSettingsKey(sessionId)),
+      legacyFallback,
+    );
+
+    if (projectKey) {
+      const draftKey = getCodexDraftSettingsKey(projectKey);
+      const draftSettings = readJsonStorage(draftKey);
+      if (draftSettings) {
+        nextSettings = normalizeCodexSettings(draftSettings, legacyFallback);
+        writeJsonStorage(getCodexSessionSettingsKey(sessionId), nextSettings);
+        safeLocalStorage.removeItem(draftKey);
+      }
     }
 
     if (provider === 'codex') {
-      const savedInteractionMode = safeLocalStorage.getItem(`${CODEX_INTERACTION_MODE_PREFIX}${selectedSession.id}`);
-      const savedApprovalPolicy = safeLocalStorage.getItem(`${CODEX_APPROVAL_POLICY_PREFIX}${selectedSession.id}`);
-
-      setCodexInteractionModeState(
-        isCodexInteractionMode(savedInteractionMode)
-          ? savedInteractionMode
-          : getDefaultCodexInteractionMode(),
-      );
-      setCodexApprovalPolicyState(
-        isCodexApprovalPolicy(savedApprovalPolicy)
-          ? savedApprovalPolicy
-          : getDefaultCodexApprovalPolicy(),
-      );
-      return;
+      applyCodexSettings(nextSettings);
     }
-
-    const savedMode = safeLocalStorage.getItem(`permissionMode-${selectedSession.id}`);
-    setPermissionMode((savedMode as PermissionMode) || 'default');
-  }, [selectedSession?.id, provider]);
+  }, [applyCodexSettings, projectKey, provider]);
 
   useEffect(() => {
     if (!selectedSession?.__provider || selectedSession.__provider === provider) {
@@ -136,7 +321,7 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     }
 
     setProvider(selectedSession.__provider);
-    localStorage.setItem('selected-provider', selectedSession.__provider);
+    safeLocalStorage.setItem('selected-provider', selectedSession.__provider);
   }, [provider, selectedSession]);
 
   useEffect(() => {
@@ -154,34 +339,35 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   }, [selectedSession?.id]);
 
   useEffect(() => {
-    if (!hasPersistedCodexReasoningRef.current) {
-      hasPersistedCodexReasoningRef.current = true;
+    const shouldUseCodexSettings = provider === 'codex' || selectedSession?.__provider === 'codex';
+    if (shouldUseCodexSettings) {
+      applyCodexSettings(readCurrentCodexSettings());
       return;
     }
 
-    const existingSettings = readStoredCodexSettings();
-    safeLocalStorage.setItem(CODEX_SETTINGS_KEY, JSON.stringify({
-      ...existingSettings,
-      reasoningEffort: codexReasoningEffort,
-      lastUpdated: new Date().toISOString(),
-    }));
-  }, [codexReasoningEffort]);
+    if (!selectedSession?.id) {
+      return;
+    }
+
+    const savedMode = safeLocalStorage.getItem(`permissionMode-${selectedSession.id}`);
+    setPermissionMode((savedMode as PermissionMode) || 'default');
+  }, [applyCodexSettings, currentSessionId, provider, readCurrentCodexSettings, selectedSession?.__provider, selectedSession?.id]);
+
+  const setCodexModel = useCallback((nextModel: string) => {
+    persistCodexSettings({ model: nextModel });
+  }, [persistCodexSettings]);
 
   const setCodexInteractionMode = useCallback((nextMode: CodexInteractionMode) => {
-    setCodexInteractionModeState(nextMode);
-
-    if (selectedSession?.id) {
-      safeLocalStorage.setItem(`${CODEX_INTERACTION_MODE_PREFIX}${selectedSession.id}`, nextMode);
-    }
-  }, [selectedSession?.id]);
+    persistCodexSettings({ interactionMode: nextMode });
+  }, [persistCodexSettings]);
 
   const setCodexApprovalPolicy = useCallback((nextPolicy: CodexApprovalPolicy) => {
-    setCodexApprovalPolicyState(nextPolicy);
+    persistCodexSettings({ approvalPolicy: nextPolicy });
+  }, [persistCodexSettings]);
 
-    if (selectedSession?.id) {
-      safeLocalStorage.setItem(`${CODEX_APPROVAL_POLICY_PREFIX}${selectedSession.id}`, nextPolicy);
-    }
-  }, [selectedSession?.id]);
+  const setCodexReasoningEffort = useCallback((nextEffort: CodexReasoningEffort) => {
+    persistCodexSettings({ reasoningEffort: nextEffort });
+  }, [persistCodexSettings]);
 
   const cyclePermissionMode = useCallback(() => {
     if (provider === 'codex') {
@@ -215,6 +401,7 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     setCodexApprovalPolicy,
     codexReasoningEffort,
     setCodexReasoningEffort,
+    handleCodexSessionCreated,
     geminiModel,
     setGeminiModel,
     permissionMode,

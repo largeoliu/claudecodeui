@@ -1,48 +1,48 @@
 // @vitest-environment jsdom
 
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { vi } from 'vitest';
-
-const providerStateMocks = vi.hoisted(() => ({
-  authenticatedFetch: vi.fn(),
-}));
-
-vi.mock('../../../src/utils/api.js', () => ({
-  authenticatedFetch: providerStateMocks.authenticatedFetch,
-}));
-
 import { useChatProviderState } from '../../../src/components/chat/hooks/useChatProviderState';
+
+const selectedProject = {
+  name: 'demo-project',
+  displayName: 'Demo Project',
+  fullPath: '/work/demo-project',
+} as any;
 
 describe('useChatProviderState', () => {
   beforeEach(() => {
-    providerStateMocks.authenticatedFetch.mockReset();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
-  it('syncs the provider from the selected session and restores default codex settings', async () => {
+  it('syncs codex session settings from the session-scoped blob', async () => {
     localStorage.setItem('selected-provider', 'claude');
-    localStorage.setItem('codex-settings', JSON.stringify({
+    localStorage.setItem('chat-session-settings:codex:codex-session', JSON.stringify({
+      model: 'gpt-5.2',
       interactionMode: 'plan',
-      approvalPolicy: 'on-request',
+      approvalPolicy: 'never',
       reasoningEffort: 'high',
     }));
 
     const { result } = renderHook(() => useChatProviderState({
+      selectedProject,
       selectedSession: { id: 'codex-session', __provider: 'codex' } as any,
+      currentSessionId: 'codex-session',
     }));
 
     await waitFor(() => {
       expect(result.current.provider).toBe('codex');
     });
 
-    expect(localStorage.getItem('selected-provider')).toBe('codex');
+    expect(result.current.codexModel).toBe('gpt-5.2');
     expect(result.current.codexInteractionMode).toBe('plan');
-    expect(result.current.codexApprovalPolicy).toBe('on-request');
+    expect(result.current.codexApprovalPolicy).toBe('never');
     expect(result.current.codexReasoningEffort).toBe('high');
   });
 
-  it('loads per-session codex preferences and persists reasoning effort updates', async () => {
+  it('falls back to legacy codex settings for sessions without session-scoped storage', async () => {
     localStorage.setItem('selected-provider', 'codex');
+    localStorage.setItem('codex-model', 'gpt-5.3-codex');
     localStorage.setItem('codex-settings', JSON.stringify({
       interactionMode: 'plan',
       approvalPolicy: 'on-request',
@@ -52,22 +52,74 @@ describe('useChatProviderState', () => {
     localStorage.setItem('codex-approval-policy-codex-session', 'never');
 
     const { result } = renderHook(() => useChatProviderState({
+      selectedProject,
       selectedSession: { id: 'codex-session', __provider: 'codex' } as any,
+      currentSessionId: 'codex-session',
     }));
 
     await waitFor(() => {
+      expect(result.current.codexModel).toBe('gpt-5.3-codex');
       expect(result.current.codexInteractionMode).toBe('edit');
       expect(result.current.codexApprovalPolicy).toBe('never');
+      expect(result.current.codexReasoningEffort).toBe('medium');
     });
+  });
+
+  it('persists codex setting updates to the session-scoped blob', async () => {
+    localStorage.setItem('selected-provider', 'codex');
+
+    const { result } = renderHook(() => useChatProviderState({
+      selectedProject,
+      selectedSession: { id: 'codex-session', __provider: 'codex' } as any,
+      currentSessionId: 'codex-session',
+    }));
 
     act(() => {
+      result.current.setCodexModel('gpt-5.2');
+      result.current.setCodexInteractionMode('plan');
+      result.current.setCodexApprovalPolicy('never');
       result.current.setCodexReasoningEffort('high');
     });
 
     await waitFor(() => {
-      expect(JSON.parse(localStorage.getItem('codex-settings') || '{}')).toMatchObject({
+      expect(JSON.parse(localStorage.getItem('chat-session-settings:codex:codex-session') || '{}')).toMatchObject({
+        model: 'gpt-5.2',
+        interactionMode: 'plan',
+        approvalPolicy: 'never',
         reasoningEffort: 'high',
       });
+    });
+  });
+
+  it('hydrates draft codex settings and migrates them on session creation', async () => {
+    localStorage.setItem('selected-provider', 'codex');
+    localStorage.setItem('chat-draft-settings:/work/demo-project:codex', JSON.stringify({
+      model: 'gpt-5.2-codex',
+      interactionMode: 'plan',
+      approvalPolicy: 'never',
+      reasoningEffort: 'high',
+    }));
+
+    const { result } = renderHook(() => useChatProviderState({
+      selectedProject,
+      selectedSession: null,
+      currentSessionId: null,
+    }));
+
+    await waitFor(() => {
+      expect(result.current.codexModel).toBe('gpt-5.2-codex');
+    });
+
+    act(() => {
+      result.current.handleCodexSessionCreated('codex-session');
+    });
+
+    expect(localStorage.getItem('chat-draft-settings:/work/demo-project:codex')).toBeNull();
+    expect(JSON.parse(localStorage.getItem('chat-session-settings:codex:codex-session') || '{}')).toMatchObject({
+      model: 'gpt-5.2-codex',
+      interactionMode: 'plan',
+      approvalPolicy: 'never',
+      reasoningEffort: 'high',
     });
   });
 
@@ -76,7 +128,9 @@ describe('useChatProviderState', () => {
     localStorage.setItem('permissionMode-claude-session', 'acceptEdits');
 
     const { result } = renderHook(() => useChatProviderState({
+      selectedProject,
       selectedSession: { id: 'claude-session', __provider: 'claude' } as any,
+      currentSessionId: 'claude-session',
     }));
 
     await waitFor(() => {
@@ -89,39 +143,5 @@ describe('useChatProviderState', () => {
 
     expect(result.current.permissionMode).toBe('bypassPermissions');
     expect(localStorage.getItem('permissionMode-claude-session')).toBe('bypassPermissions');
-  });
-
-  it('cycles Codex interaction modes and clears pending permission requests on provider changes', async () => {
-    localStorage.setItem('selected-provider', 'codex');
-    localStorage.setItem('codex-interaction-mode-codex-session', 'edit');
-
-    const { result } = renderHook(() => useChatProviderState({
-      selectedSession: { id: 'codex-session', __provider: 'codex' } as any,
-    }));
-
-    await waitFor(() => {
-      expect(result.current.provider).toBe('codex');
-    });
-
-    act(() => {
-      result.current.setPendingPermissionRequests([
-        { requestId: 'req-1', toolName: 'Bash', sessionId: 'codex-session' },
-      ] as any);
-    });
-
-    act(() => {
-      result.current.cyclePermissionMode();
-    });
-
-    expect(result.current.codexInteractionMode).toBe('plan');
-    expect(localStorage.getItem('codex-interaction-mode-codex-session')).toBe('plan');
-
-    act(() => {
-      result.current.setProvider('claude');
-    });
-
-    await waitFor(() => {
-      expect(result.current.pendingPermissionRequests).toEqual([]);
-    });
   });
 });

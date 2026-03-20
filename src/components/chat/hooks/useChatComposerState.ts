@@ -188,7 +188,21 @@ export function useChatComposerState({
             ...previous,
             {
               type: 'assistant',
-              content: `**Current Model**: ${data.current.model}\n\n**Available Models**:\n\nClaude: ${data.available.claude.join(', ')}`,
+              content: [
+                `**Current Model**: ${data.current.model}`,
+                '',
+                '**Available Models:**',
+                '',
+                Array.isArray(data.available?.claude)
+                  ? `Claude: ${data.available.claude.join(', ')}`
+                  : null,
+                Array.isArray(data.available?.codex)
+                  ? `Codex: ${data.available.codex.join(', ')}`
+                  : null,
+                Array.isArray(data.available?.gemini)
+                  ? `Gemini: ${data.available.gemini.join(', ')}`
+                  : null,
+              ].filter(Boolean).join('\n'),
               timestamp: Date.now(),
             },
           ]);

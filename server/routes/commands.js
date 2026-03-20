@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
-import { CLAUDE_MODELS, CODEX_MODELS, getContextWindow, DEFAULT_CONTEXT_WINDOW } from '../../shared/modelConstants.js';
+import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS, getContextWindow, DEFAULT_CONTEXT_WINDOW } from '../../shared/modelConstants.js';
 import { parseFrontmatter } from '../utils/frontmatter.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -186,7 +186,8 @@ Custom commands can be created in:
     // Read available models from centralized constants
     const availableModels = {
       claude: CLAUDE_MODELS.OPTIONS.map(o => o.value),
-      codex: CODEX_MODELS.OPTIONS.map(o => o.value)
+      codex: CODEX_MODELS.OPTIONS.map(o => o.value),
+      gemini: GEMINI_MODELS.OPTIONS.map(o => o.value),
     };
 
     const currentProvider = context?.provider || 'claude';

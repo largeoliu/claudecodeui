@@ -16,6 +16,11 @@ export const CODEX_REASONING_EFFORTS = [
     color: 'text-violet-600',
     badge: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-300',
   },
+  {
+    id: 'xhigh',
+    color: 'text-rose-600',
+    badge: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300',
+  },
 ] as const;
 
 export type CodexReasoningEffort = (typeof CODEX_REASONING_EFFORTS)[number]['id'];

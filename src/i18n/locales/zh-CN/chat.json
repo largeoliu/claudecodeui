@@ -126,6 +126,10 @@
         "high": {
           "name": "High",
           "description": "适合更复杂的问题，推理更深入。"
+        },
+        "xhigh": {
+          "name": "XHigh",
+          "description": "适合最复杂的任务，使用最大思考深度。"
         }
       }
     },

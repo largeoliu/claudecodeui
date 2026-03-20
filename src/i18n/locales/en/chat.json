@@ -125,6 +125,10 @@
         "high": {
           "name": "High",
           "description": "Deeper reasoning for harder problems."
+        },
+        "xhigh": {
+          "name": "XHigh",
+          "description": "Maximum reasoning depth for the hardest tasks."
         }
       }
     },

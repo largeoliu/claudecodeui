@@ -344,6 +344,21 @@ describe('codexAppServer reasoning effort coercion', () => {
     }));
   });
 
+  it('passes through xhigh reasoning effort for supported models', async () => {
+    vi.spyOn(codexAppServer, 'ensureThreadLoaded').mockResolvedValue();
+    const sendRequestSpy = vi.spyOn(codexAppServer, 'sendRequest').mockResolvedValue({ ok: true });
+
+    await codexAppServer.startTurn('session-1', 'hello', {
+      model: 'gpt-5.2',
+      reasoningEffort: 'xhigh',
+    });
+
+    expect(sendRequestSpy).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      model: 'gpt-5.2',
+      effort: 'xhigh',
+    }));
+  });
+
   it('tracks coerced reasoning effort for per-thread settings comparisons', () => {
     codexAppServer.setTrackedTurnSettings('session-1', {
       model: 'o4-mini',

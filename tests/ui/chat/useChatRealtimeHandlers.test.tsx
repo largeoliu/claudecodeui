@@ -328,6 +328,254 @@ describe('useChatRealtimeHandlers', () => {
     expect(harness.callbacks.onCodexInteractiveRequestSettled).toHaveBeenCalledTimes(1);
   });
 
+  it('streams Codex assistant and reasoning items into separate messages', async () => {
+    const harness = renderRealtimeHarness({ provider: 'codex' });
+
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'agent_message_delta',
+        itemId: 'assistant-1',
+        delta: 'Hello &amp; ',
+      },
+    });
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'agent_message',
+        itemId: 'assistant-1',
+        message: { content: 'Hello &amp; world' },
+      },
+    });
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'reasoning_delta',
+        itemId: 'thinking-1',
+        delta: 'Step 1',
+      },
+    });
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'reasoning',
+        itemId: 'thinking-1',
+        message: { content: 'Step 1 -> done' },
+      },
+    });
+
+    expect(harness.result.current.chatMessages).toEqual([
+      expect.objectContaining({
+        type: 'assistant',
+        content: 'Hello & world',
+        toolId: 'assistant-1',
+        isThinking: false,
+        isStreaming: false,
+      }),
+      expect.objectContaining({
+        type: 'assistant',
+        content: 'Step 1 -> done',
+        toolId: 'thinking-1',
+        isThinking: true,
+        isStreaming: false,
+      }),
+    ]);
+  });
+
+  it('maps Codex command, file, and custom tool items into tool-use messages', async () => {
+    const harness = renderRealtimeHarness({ provider: 'codex' });
+
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'command_execution',
+        itemId: 'command-1',
+        command: 'npm test',
+        cwd: '/work/demo-project',
+        exitCode: null,
+      },
+    });
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'command_execution_delta',
+        itemId: 'command-1',
+        delta: 'line 1\n',
+      },
+    });
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'file_change',
+        itemId: 'edit-1',
+        changes: [{ kind: 'update', path: 'src/App.tsx' }],
+        phase: 'completed',
+        status: 'failed',
+      },
+    });
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'function_call',
+        item: {
+          call_id: 'tool-1',
+          name: 'shell_command',
+          arguments: '{"command":"ls -la"}',
+        },
+      },
+    });
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-1',
+      data: {
+        type: 'item',
+        itemType: 'function_call_output',
+        item: {
+          call_id: 'tool-1',
+          output: { ok: true },
+        },
+      },
+    });
+
+    expect(harness.result.current.chatMessages).toEqual([
+      expect.objectContaining({
+        isToolUse: true,
+        toolId: 'command-1',
+        toolName: 'Bash',
+        toolInput: { command: 'npm test', cwd: '/work/demo-project' },
+        toolResult: expect.objectContaining({ content: 'line 1\n', isError: false }),
+      }),
+      expect.objectContaining({
+        isToolUse: true,
+        toolId: 'edit-1',
+        toolName: 'Edit',
+        toolInput: 'update: src/App.tsx',
+        toolResult: expect.objectContaining({ content: 'Status: failed', isError: true }),
+      }),
+      expect.objectContaining({
+        isToolUse: true,
+        toolId: 'tool-1',
+        toolName: 'Bash',
+        toolInput: { command: 'ls -la' },
+        toolResult: expect.objectContaining({
+          isError: false,
+          content: expect.stringContaining('"ok": true'),
+        }),
+      }),
+    ]);
+  });
+
+  it('tracks Codex interactive requests through receipt and rejection states', async () => {
+    const harness = renderRealtimeHarness({ provider: 'codex' });
+
+    await harness.emitMessage({
+      type: 'codex-command-stdin-request',
+      sessionId: 'session-1',
+      requestId: 'stdin-1',
+      toolName: 'CodexTerminalInput',
+      input: {
+        prompt: 'Enter stdin',
+        processId: 'proc-1',
+      },
+    });
+
+    expect(harness.result.current.pendingPermissionRequests).toEqual([
+      expect.objectContaining({
+        requestId: 'stdin-1',
+        provider: 'codex',
+        requestKind: 'terminal-stdin',
+        toolName: 'CodexTerminalInput',
+      }),
+    ]);
+    expect(harness.result.current.claudeStatus).toEqual({
+      text: 'Waiting for terminal input',
+      tokens: 0,
+      can_interrupt: true,
+    });
+
+    await harness.emitMessage({
+      type: 'codex-interactive-response-received',
+      sessionId: 'session-1',
+      requestId: 'stdin-1',
+    });
+
+    expect(harness.result.current.pendingPermissionRequests).toEqual([
+      expect.objectContaining({
+        requestId: 'stdin-1',
+        deliveryState: 'processing',
+        deliveryError: null,
+      }),
+    ]);
+
+    await harness.emitMessage({
+      type: 'codex-interactive-response-error',
+      sessionId: 'session-1',
+      requestId: 'stdin-1',
+      error: 'Terminal refused input',
+    });
+
+    expect(harness.result.current.pendingPermissionRequests).toEqual([
+      expect.objectContaining({
+        requestId: 'stdin-1',
+        deliveryState: 'failed',
+        deliveryError: 'Terminal refused input',
+      }),
+    ]);
+  });
+
+  it('updates lifecycle state for Codex turns and navigates to completed sessions', async () => {
+    sessionStorage.setItem('pendingSessionId', 'session-pending');
+    localStorage.setItem('chat_messages_demo-project', JSON.stringify([{ type: 'assistant', content: 'stale' }]));
+    const harness = renderRealtimeHarness({
+      provider: 'codex',
+      selectedSession: null,
+      initialCurrentSessionId: null,
+      pendingViewSession: { sessionId: 'session-pending', startedAt: Date.now() },
+    });
+
+    await harness.emitMessage({
+      type: 'codex-response',
+      sessionId: 'session-pending',
+      data: { type: 'turn_started' },
+    });
+
+    expect(harness.result.current.isLoading).toBe(true);
+    expect(harness.result.current.canAbortSession).toBe(true);
+    expect(harness.result.current.claudeStatus).toEqual({
+      text: 'Processing',
+      tokens: 0,
+      can_interrupt: true,
+    });
+
+    await harness.emitMessage({
+      type: 'codex-complete',
+      sessionId: 'session-pending',
+      actualSessionId: 'session-final',
+    });
+
+    expect(sessionStorage.getItem('pendingSessionId')).toBeNull();
+    expect(localStorage.getItem('chat_messages_demo-project')).toBeNull();
+    expect(harness.result.current.currentSessionId).toBe('session-final');
+    expect(harness.result.current.isSystemSessionChange).toBe(true);
+    expect(harness.callbacks.onNavigateToSession).toHaveBeenCalledWith('session-final');
+  });
+
   it('clears pending session ids and appends a confirmation when a session is aborted', async () => {
     sessionStorage.setItem('pendingSessionId', 'session-1');
     const harness = renderRealtimeHarness({

@@ -159,7 +159,7 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
         </div>
       ) : (
         /* Claude/Error/Tool messages on the left */
-        <div className="w-full flex flex-col items-start max-w-[95%] sm:max-w-[90%] md:max-w-2xl lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl">
+        <div className="flex w-full flex-col items-start">
           <div className="w-full px-5 py-1">
             {message.isToolUse ? (
               <>

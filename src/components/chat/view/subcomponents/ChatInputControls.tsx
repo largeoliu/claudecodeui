@@ -54,7 +54,7 @@ export default function ChatInputControls({
   const isPermissionModeActive = permissionMode === 'acceptEdits' || permissionMode === 'default' || permissionMode === 'bypassPermissions';
 
   return (
-    <div className="no-scrollbar flex w-full flex-nowrap items-center gap-2 overflow-x-auto px-1 scroll-smooth py-0.5 pt-80 -mt-80">
+    <div className="no-scrollbar flex w-full flex-nowrap items-center gap-2 overflow-x-auto py-0.5 scroll-smooth">
       {provider === 'codex' && codexModel && onCodexModelChange && (
         <div className="flex-shrink-0">
           <CodexModelSelector
@@ -67,6 +67,7 @@ export default function ChatInputControls({
       {provider === 'codex' && (
         <div className="flex-shrink-0">
           <CodexReasoningEffortSelector
+            model={codexModel || CODEX_MODELS.DEFAULT}
             selectedEffort={codexReasoningEffort}
             onEffortChange={setCodexReasoningEffort}
             onClose={() => { }}

@@ -86,26 +86,27 @@ export const CODEX_MODELS = {
 };
 
 const DEFAULT_CODEX_REASONING_EFFORTS = ['low', 'medium', 'high'];
+const EXTENDED_CODEX_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
 
 export const CODEX_MODEL_CAPABILITIES = {
   'gpt-5.4': {
-    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    supportedReasoningEfforts: EXTENDED_CODEX_REASONING_EFFORTS,
     defaultReasoningEffort: 'high',
   },
   'gpt-5.3-codex': {
-    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    supportedReasoningEfforts: EXTENDED_CODEX_REASONING_EFFORTS,
     defaultReasoningEffort: 'high',
   },
   'gpt-5.2-codex': {
-    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    supportedReasoningEfforts: EXTENDED_CODEX_REASONING_EFFORTS,
     defaultReasoningEffort: 'high',
   },
   'gpt-5.2': {
-    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    supportedReasoningEfforts: EXTENDED_CODEX_REASONING_EFFORTS,
     defaultReasoningEffort: 'high',
   },
   'gpt-5.1-codex-max': {
-    supportedReasoningEfforts: DEFAULT_CODEX_REASONING_EFFORTS,
+    supportedReasoningEfforts: EXTENDED_CODEX_REASONING_EFFORTS,
     defaultReasoningEffort: 'high',
   },
   o3: {

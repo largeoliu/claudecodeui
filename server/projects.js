@@ -402,12 +402,10 @@ async function extractProjectDirectory(projectName) {
     return extractedPath;
 
   } catch (error) {
-    // If the directory doesn't exist, just use the decoded project name
     if (error.code === 'ENOENT') {
       extractedPath = projectName.replace(/-/g, '/');
     } else {
       console.error(`Error extracting project directory for ${projectName}:`, error);
-      // Fall back to decoded project name for other errors
       extractedPath = projectName.replace(/-/g, '/');
     }
 
@@ -899,7 +897,9 @@ async function getSessions(projectName, limit = 5, offset = 0) {
       limit
     };
   } catch (error) {
-    console.error(`Error reading sessions for project ${projectName}:`, error);
+    if (error.code !== 'ENOENT') {
+      console.error(`Error reading sessions for project ${projectName}:`, error);
+    }
     return { sessions: [], hasMore: false, total: 0 };
   }
 }

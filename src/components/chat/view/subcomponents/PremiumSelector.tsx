@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, LucideIcon } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { cn } from '../../../../lib/utils';
 
 export interface SelectOption {
@@ -33,13 +33,42 @@ export default function PremiumSelector({
   onClose,
   title,
 }: PremiumSelectorProps) {
-  const { t } = useTranslation('chat');
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 320 });
+
+  const updateMenuPosition = () => {
+    const trigger = triggerRef.current;
+    if (!trigger) {
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const padding = 8;
+    const gap = 8;
+    const availableAbove = rect.top - padding;
+    const availableBelow = window.innerHeight - rect.bottom - padding;
+    const shouldPlaceAbove = availableAbove >= 120 || availableAbove >= availableBelow;
+    const maxHeight = Math.max(120, Math.min(320, shouldPlaceAbove ? availableAbove : availableBelow));
+    const menuHeight = menuRef.current?.offsetHeight ?? maxHeight;
+    const top = shouldPlaceAbove
+      ? Math.max(padding, rect.top - menuHeight - gap)
+      : Math.min(window.innerHeight - padding - menuHeight, rect.bottom + gap);
+    setMenuPosition({
+      top,
+      left: rect.left,
+      width: rect.width,
+      maxHeight,
+    });
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const insideTrigger = Boolean(dropdownRef.current?.contains(target));
+      const insideMenu = Boolean(menuRef.current?.contains(target));
+      if (!insideTrigger && !insideMenu) {
         setIsOpen(false);
         onClose?.();
       }
@@ -51,6 +80,26 @@ export default function PremiumSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, onClose]);
 
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    updateMenuPosition();
+
+    const handleReposition = () => {
+      updateMenuPosition();
+    };
+
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [isOpen]);
+
   const selectedOption = options.find((opt) => opt.id === selectedValue) || options[0];
   const DisplayIcon = selectedOption?.icon || TriggerIcon;
   const displayColor = selectedOption?.color || triggerColor;
@@ -58,6 +107,7 @@ export default function PremiumSelector({
   return (
     <div className={cn("relative z-[1000]", className)} ref={dropdownRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
@@ -92,8 +142,17 @@ export default function PremiumSelector({
         )} />
       </button>
 
-      {isOpen && (
-        <div className="absolute bottom-full left-0 right-0 z-[1001] mb-3 max-h-80 overflow-y-auto rounded-lg border border-white/10 bg-[#0a0a0a] shadow-[0_20px_50px_rgba(0,0,0,0.8)] backdrop-blur-3xl animate-stagger-in no-scrollbar">
+      {isOpen && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[2000] max-h-80 overflow-y-auto rounded-lg border border-white/10 bg-[#0a0a0a] shadow-[0_20px_50px_rgba(0,0,0,0.8)] backdrop-blur-3xl animate-stagger-in no-scrollbar"
+          style={{
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`,
+            width: `${menuPosition.width}px`,
+            maxHeight: `${menuPosition.maxHeight}px`,
+          }}
+        >
           <div className="flex flex-col">
             {options.map((option, idx) => {
               const OptionIcon = option.icon;
@@ -128,7 +187,8 @@ export default function PremiumSelector({
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

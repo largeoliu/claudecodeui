@@ -11,8 +11,6 @@ import AssistantThinkingIndicator from './AssistantThinkingIndicator';
 
 interface ChatMessagesPaneProps {
   scrollContainerRef: RefObject<HTMLDivElement>;
-  onWheel: () => void;
-  onTouchMove: () => void;
   isLoadingSessionMessages: boolean;
   chatMessages: ChatMessage[];
   selectedSession: ProjectSession | null;
@@ -56,8 +54,6 @@ interface ChatMessagesPaneProps {
 
 export default function ChatMessagesPane({
   scrollContainerRef,
-  onWheel,
-  onTouchMove,
   isLoadingSessionMessages,
   chatMessages,
   selectedSession,
@@ -196,9 +192,7 @@ export default function ChatMessagesPane({
   return (
     <div
       ref={scrollContainerRef}
-      onWheel={onWheel}
-      onTouchMove={onTouchMove}
-      className="relative flex-1 overflow-y-auto overflow-x-hidden px-0 py-3 sm:p-4"
+      className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-0 py-3 sm:p-4"
     >
       {isLoadingSessionMessages && chatMessages.length === 0 ? (
         <div className="mt-8 text-center text-gray-500 dark:text-gray-400">

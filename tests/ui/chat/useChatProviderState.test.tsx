@@ -126,10 +126,10 @@ describe('useChatProviderState', () => {
   it('coerces unsupported reasoning effort when hydrating a weaker model', async () => {
     localStorage.setItem('selected-provider', 'codex');
     localStorage.setItem('chat-session-settings:codex:codex-session', JSON.stringify({
-      model: 'o4-mini',
+      model: 'o3',
       interactionMode: 'edit',
       approvalPolicy: 'on-request',
-      reasoningEffort: 'high',
+      reasoningEffort: 'xhigh',
     }));
 
     const { result } = renderHook(() => useChatProviderState({
@@ -139,10 +139,32 @@ describe('useChatProviderState', () => {
     }));
 
     await waitFor(() => {
-      expect(result.current.codexModel).toBe('o4-mini');
+      expect(result.current.codexModel).toBe('o3');
     });
 
-    expect(result.current.codexReasoningEffort).toBe('medium');
+    expect(result.current.codexReasoningEffort).toBe('high');
+  });
+
+  it('preserves xhigh reasoning effort for supported models', async () => {
+    localStorage.setItem('selected-provider', 'codex');
+    localStorage.setItem('chat-session-settings:codex:codex-session', JSON.stringify({
+      model: 'gpt-5.2',
+      interactionMode: 'edit',
+      approvalPolicy: 'on-request',
+      reasoningEffort: 'xhigh',
+    }));
+
+    const { result } = renderHook(() => useChatProviderState({
+      selectedProject,
+      selectedSession: { id: 'codex-session', __provider: 'codex' } as any,
+      currentSessionId: 'codex-session',
+    }));
+
+    await waitFor(() => {
+      expect(result.current.codexModel).toBe('gpt-5.2');
+    });
+
+    expect(result.current.codexReasoningEffort).toBe('xhigh');
   });
 
   it('downgrades reasoning effort when switching to a model without high support', async () => {
@@ -155,7 +177,7 @@ describe('useChatProviderState', () => {
     }));
 
     act(() => {
-      result.current.setCodexReasoningEffort('high');
+      result.current.setCodexReasoningEffort('xhigh');
       result.current.setCodexModel('o4-mini');
     });
 

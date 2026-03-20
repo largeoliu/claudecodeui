@@ -12,6 +12,11 @@ type SessionPayload = {
   };
 };
 
+type MockSocketMessage = {
+  type?: string;
+  [key: string]: unknown;
+};
+
 export const DEFAULT_E2E_USER = {
   username: 'playwright-e2e',
   password: 'Passw0rd!123',
@@ -226,6 +231,151 @@ export async function primeAuthenticatedPage(page: Page, token: string) {
   await page.addInitScript((nextToken: string) => {
     localStorage.setItem('auth-token', nextToken);
   }, token);
+}
+
+export async function installMockWebSocket(page: Page) {
+  await page.addInitScript(() => {
+    const globalWindow = window as typeof window & {
+      __e2eMockWebSocket?: {
+        sockets: Array<{
+          readyState: number;
+          onmessage: ((event: { data: string }) => void) | null;
+          onclose: ((event: { code: number; reason: string; wasClean: boolean }) => void) | null;
+        }>;
+        sentMessages: MockSocketMessage[];
+        emit: (message: MockSocketMessage) => void;
+        clearSentMessages: () => void;
+        getSentMessages: () => MockSocketMessage[];
+      };
+    };
+
+    const state = {
+      sockets: [] as Array<{
+        readyState: number;
+        onmessage: ((event: { data: string }) => void) | null;
+        onclose: ((event: { code: number; reason: string; wasClean: boolean }) => void) | null;
+      }>,
+      sentMessages: [] as MockSocketMessage[],
+      emit(message: MockSocketMessage) {
+        const payload = JSON.stringify(message);
+        state.sockets.forEach((socket) => {
+          if (socket.readyState === 1) {
+            socket.onmessage?.({ data: payload });
+          }
+        });
+      },
+      clearSentMessages() {
+        state.sentMessages = [];
+      },
+      getSentMessages() {
+        return state.sentMessages.slice();
+      },
+    };
+
+    class MockWebSocket {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+
+      url: string;
+      readyState = MockWebSocket.CONNECTING;
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onclose: ((event: { code: number; reason: string; wasClean: boolean }) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+
+      constructor(url: string) {
+        this.url = url;
+        state.sockets.push(this);
+
+        setTimeout(() => {
+          if (this.readyState !== MockWebSocket.CONNECTING) {
+            return;
+          }
+          this.readyState = MockWebSocket.OPEN;
+          this.onopen?.(new Event('open'));
+        }, 0);
+      }
+
+      send(data: string) {
+        state.sentMessages.push(JSON.parse(data));
+      }
+
+      close(code = 1000, reason = 'Closed by test') {
+        if (this.readyState >= MockWebSocket.CLOSING) {
+          return;
+        }
+
+        this.readyState = MockWebSocket.CLOSED;
+        this.onclose?.({ code, reason, wasClean: code === 1000 });
+      }
+    }
+
+    globalWindow.__e2eMockWebSocket = state;
+    globalWindow.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+  });
+}
+
+export async function emitMockWebSocketMessage(page: Page, message: MockSocketMessage) {
+  await page.evaluate((nextMessage) => {
+    const globalWindow = window as typeof window & {
+      __e2eMockWebSocket?: {
+        emit: (message: MockSocketMessage) => void;
+      };
+    };
+
+    globalWindow.__e2eMockWebSocket?.emit(nextMessage);
+  }, message);
+}
+
+export async function clearMockWebSocketMessages(page: Page) {
+  await page.evaluate(() => {
+    const globalWindow = window as typeof window & {
+      __e2eMockWebSocket?: {
+        clearSentMessages: () => void;
+      };
+    };
+
+    globalWindow.__e2eMockWebSocket?.clearSentMessages();
+  });
+}
+
+export async function getMockWebSocketMessages(page: Page) {
+  return page.evaluate(() => {
+    const globalWindow = window as typeof window & {
+      __e2eMockWebSocket?: {
+        getSentMessages: () => MockSocketMessage[];
+      };
+    };
+
+    return globalWindow.__e2eMockWebSocket?.getSentMessages() || [];
+  });
+}
+
+export async function waitForMockWebSocketMessage(page: Page, type: string) {
+  await page.waitForFunction((expectedType) => {
+    const globalWindow = window as typeof window & {
+      __e2eMockWebSocket?: {
+        getSentMessages: () => MockSocketMessage[];
+      };
+    };
+
+    return (globalWindow.__e2eMockWebSocket?.getSentMessages() || []).some(
+      (message) => message?.type === expectedType,
+    );
+  }, type);
+
+  return page.evaluate((expectedType) => {
+    const globalWindow = window as typeof window & {
+      __e2eMockWebSocket?: {
+        getSentMessages: () => MockSocketMessage[];
+      };
+    };
+
+    const messages = globalWindow.__e2eMockWebSocket?.getSentMessages() || [];
+    return [...messages].reverse().find((message) => message?.type === expectedType) || null;
+  }, type);
 }
 
 export async function loginThroughUi(page: Page, username: string, password: string) {

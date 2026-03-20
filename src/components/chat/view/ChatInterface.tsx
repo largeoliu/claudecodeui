@@ -8,6 +8,12 @@ import { useChatProviderState } from '../hooks/useChatProviderState';
 import { useChatSessionState } from '../hooks/useChatSessionState';
 import { useChatRealtimeHandlers } from '../hooks/useChatRealtimeHandlers';
 import { useChatComposerState } from '../hooks/useChatComposerState';
+import {
+  getInteractiveRequestTimeoutMessage,
+  getInteractiveRequestTimeoutMs,
+  isInteractiveRequestInFlight,
+  setInteractiveRequestDeliveryState,
+} from '../utils/interactiveRequestTransport';
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
 import CodexSessionControlsBar from './subcomponents/CodexSessionControlsBar';
@@ -34,6 +40,7 @@ const CHAT_REALTIME_MESSAGE_TYPES = new Set([
   'codex-user-input-request',
   'codex-command-stdin-request',
   'codex-request-cancelled',
+  'codex-interactive-response-received',
   'codex-interactive-response-ack',
   'codex-interactive-response-error',
   'codex-complete',
@@ -58,6 +65,8 @@ type PendingViewSession = {
   sessionId: string | null;
   startedAt: number;
 };
+
+type InFlightInteractiveRequestState = 'submitting' | 'processing';
 
 function ChatInterface({
   selectedProject,
@@ -91,6 +100,9 @@ function ChatInterface({
   const streamBufferRef = useRef('');
   const streamTimerRef = useRef<number | null>(null);
   const pendingViewSessionRef = useRef<PendingViewSession | null>(null);
+  const interactiveRequestTimeoutsRef = useRef(
+    new Map<string, { deliveryState: InFlightInteractiveRequestState; timeoutId: number }>(),
+  );
 
   const resetStreamingState = useCallback(() => {
     if (streamTimerRef.current) {
@@ -325,6 +337,68 @@ function ChatInterface({
 
     requestPendingPermissions();
   }, [requestPendingPermissions, selectedSession?.id, ws]);
+
+  useEffect(() => {
+    const nextInFlightStates = new Map<string, InFlightInteractiveRequestState>();
+
+    pendingPermissionRequests.forEach((request) => {
+      if (request.provider !== 'codex' || !isInteractiveRequestInFlight(request.deliveryState)) {
+        return;
+      }
+
+      nextInFlightStates.set(request.requestId, request.deliveryState);
+    });
+
+    interactiveRequestTimeoutsRef.current.forEach((entry, requestId) => {
+      const nextState = nextInFlightStates.get(requestId);
+      if (!nextState || nextState !== entry.deliveryState) {
+        clearTimeout(entry.timeoutId);
+        interactiveRequestTimeoutsRef.current.delete(requestId);
+      }
+    });
+
+    nextInFlightStates.forEach((deliveryState, requestId) => {
+      if (interactiveRequestTimeoutsRef.current.has(requestId)) {
+        return;
+      }
+
+      const timeoutMs = getInteractiveRequestTimeoutMs(deliveryState);
+      if (timeoutMs === null) {
+        return;
+      }
+
+      const timeoutId = window.setTimeout(() => {
+        interactiveRequestTimeoutsRef.current.delete(requestId);
+        requestPendingPermissions();
+        setPendingPermissionRequests((previous) => {
+          const request = previous.find((item) => item.requestId === requestId);
+          if (
+            !request
+            || request.provider !== 'codex'
+            || request.deliveryState !== deliveryState
+          ) {
+            return previous;
+          }
+
+          return setInteractiveRequestDeliveryState(
+            previous,
+            requestId,
+            'failed',
+            getInteractiveRequestTimeoutMessage(deliveryState),
+          );
+        });
+      }, timeoutMs);
+
+      interactiveRequestTimeoutsRef.current.set(requestId, { deliveryState, timeoutId });
+    });
+  }, [pendingPermissionRequests, requestPendingPermissions, setPendingPermissionRequests]);
+
+  useEffect(() => () => {
+    interactiveRequestTimeoutsRef.current.forEach(({ timeoutId }) => {
+      clearTimeout(timeoutId);
+    });
+    interactiveRequestTimeoutsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!isLoading || !canAbortSession) {

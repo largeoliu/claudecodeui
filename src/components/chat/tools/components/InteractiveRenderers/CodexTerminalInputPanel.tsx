@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import type { PermissionPanelProps } from '../../configs/permissionPanelRegistry';
+import { isInteractiveRequestInFlight } from '../../../utils/interactiveRequestTransport';
 
 export const CodexTerminalInputPanel: React.FC<PermissionPanelProps> = ({
   request,
@@ -16,7 +17,7 @@ export const CodexTerminalInputPanel: React.FC<PermissionPanelProps> = ({
     () => (typeof input?.prompt === 'string' && input.prompt.trim() ? input.prompt : 'Terminal input required'),
     [input?.prompt],
   );
-  const isSubmitting = request.deliveryState === 'submitting';
+  const isSubmitting = isInteractiveRequestInFlight(request.deliveryState);
   const deliveryError = request.deliveryState === 'failed' ? request.deliveryError : null;
 
   const handleSubmit = () => {

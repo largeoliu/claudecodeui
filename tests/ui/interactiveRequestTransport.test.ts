@@ -1,6 +1,9 @@
 import {
   applyInteractiveRequestDispatchResults,
   buildInteractiveResponseMessage,
+  getInteractiveRequestTimeoutMessage,
+  getInteractiveRequestTimeoutMs,
+  isInteractiveRequestInFlight,
   mergePendingInteractiveRequests,
 } from '../../src/components/chat/utils/interactiveRequestTransport';
 
@@ -76,5 +79,49 @@ describe('interactiveRequestTransport', () => {
         deliveryError: 'Previous submission was not confirmed. Please submit again.',
       }),
     ]);
+  });
+
+  it('keeps processing requests busy while the backend still reports them pending', () => {
+    const next = mergePendingInteractiveRequests(
+      [
+        {
+          requestId: 'req-2',
+          provider: 'codex',
+          requestKind: 'approval',
+          toolName: 'Bash',
+          deliveryState: 'processing',
+        },
+      ],
+      [
+        {
+          requestId: 'req-2',
+          provider: 'codex',
+          requestKind: 'approval',
+          toolName: 'Bash',
+        },
+      ],
+    );
+
+    expect(next).toEqual([
+      expect.objectContaining({
+        requestId: 'req-2',
+        deliveryState: 'processing',
+        deliveryError: null,
+      }),
+    ]);
+  });
+
+  it('tracks interactive requests through receipt and completion windows', () => {
+    expect(isInteractiveRequestInFlight('submitting')).toBe(true);
+    expect(isInteractiveRequestInFlight('processing')).toBe(true);
+    expect(isInteractiveRequestInFlight('failed')).toBe(false);
+    expect(getInteractiveRequestTimeoutMs('submitting')).toBe(5000);
+    expect(getInteractiveRequestTimeoutMs('processing')).toBe(15000);
+    expect(getInteractiveRequestTimeoutMessage('submitting')).toBe(
+      'Server did not confirm receipt of the response. Please submit again.',
+    );
+    expect(getInteractiveRequestTimeoutMessage('processing')).toBe(
+      'Server received the response, but completion was not confirmed. Please submit again if the request is still pending.',
+    );
   });
 });

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { PermissionPanelProps } from '../../configs/permissionPanelRegistry';
 import type { Question } from '../../../types/types';
+import { isInteractiveRequestInFlight } from '../../../utils/interactiveRequestTransport';
 
 export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   request,
@@ -84,14 +85,14 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   }, [questions, selections, otherActive, otherTexts]);
 
   const handleSubmit = useCallback(() => {
-    if (request.deliveryState === 'submitting') {
+    if (isInteractiveRequestInFlight(request.deliveryState)) {
       return;
     }
     onDecision(request.requestId, { allow: true, updatedInput: { ...input, answers: buildAnswers() } });
   }, [onDecision, request.deliveryState, request.requestId, input, buildAnswers]);
 
   const handleSkip = useCallback(() => {
-    if (request.deliveryState === 'submitting') {
+    if (isInteractiveRequestInFlight(request.deliveryState)) {
       return;
     }
     onDecision(request.requestId, { allow: true, updatedInput: { ...input, answers: {} } });
@@ -101,7 +102,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Don't capture keys when typing in the "Other" input
     if (e.target instanceof HTMLInputElement) return;
-    if (request.deliveryState === 'submitting') {
+    if (isInteractiveRequestInFlight(request.deliveryState)) {
       e.preventDefault();
       return;
     }
@@ -151,7 +152,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   const q = questions[currentStep];
   const multi = q.multiSelect || false;
   const allowOther = q.allowOther !== false;
-  const isSubmitting = request.deliveryState === 'submitting';
+  const isSubmitting = isInteractiveRequestInFlight(request.deliveryState);
   const deliveryError = request.deliveryState === 'failed' ? request.deliveryError : null;
   const selected = selections.get(currentStep) || new Set<string>();
   const isOtherOn = otherActive.get(currentStep) || false;

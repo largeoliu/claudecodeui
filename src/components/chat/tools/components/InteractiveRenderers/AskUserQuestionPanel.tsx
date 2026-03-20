@@ -69,7 +69,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   }, []);
 
   const buildAnswers = useCallback(() => {
-    const answers: Record<string, string> = {};
+    const answers: Record<string, string | string[]> = {};
     questions.forEach((q, idx) => {
       const selected = Array.from(selections.get(idx) || []);
       const isOther = otherActive.get(idx) || false;
@@ -77,24 +77,34 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
       if (isOther && otherText) selected.push(otherText);
       const answerKey = typeof q.id === 'string' && q.id.trim() ? q.id : q.question;
       if (selected.length > 0 && answerKey) {
-        answers[answerKey] = selected.join(', ');
+        answers[answerKey] = q.multiSelect && selected.length > 1 ? selected : selected[0];
       }
     });
     return answers;
   }, [questions, selections, otherActive, otherTexts]);
 
   const handleSubmit = useCallback(() => {
+    if (request.deliveryState === 'submitting') {
+      return;
+    }
     onDecision(request.requestId, { allow: true, updatedInput: { ...input, answers: buildAnswers() } });
-  }, [onDecision, request.requestId, input, buildAnswers]);
+  }, [onDecision, request.deliveryState, request.requestId, input, buildAnswers]);
 
   const handleSkip = useCallback(() => {
+    if (request.deliveryState === 'submitting') {
+      return;
+    }
     onDecision(request.requestId, { allow: true, updatedInput: { ...input, answers: {} } });
-  }, [onDecision, request.requestId, input]);
+  }, [onDecision, request.deliveryState, request.requestId, input]);
 
   // Keyboard handler for number keys and navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Don't capture keys when typing in the "Other" input
     if (e.target instanceof HTMLInputElement) return;
+    if (request.deliveryState === 'submitting') {
+      e.preventDefault();
+      return;
+    }
 
     const q = questions[currentStep];
     if (!q) return;
@@ -132,7 +142,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
       handleSkip();
       return;
     }
-  }, [currentStep, questions, toggleOption, toggleOther, handleSubmit, handleSkip]);
+  }, [currentStep, handleSkip, handleSubmit, questions, request.deliveryState, toggleOption, toggleOther]);
 
   if (questions.length === 0) return null;
 
@@ -141,6 +151,8 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
   const q = questions[currentStep];
   const multi = q.multiSelect || false;
   const allowOther = q.allowOther !== false;
+  const isSubmitting = request.deliveryState === 'submitting';
+  const deliveryError = request.deliveryState === 'failed' ? request.deliveryError : null;
   const selected = selections.get(currentStep) || new Set<string>();
   const isOtherOn = otherActive.get(currentStep) || false;
   const isLast = currentStep === total - 1;
@@ -199,6 +211,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
                 <button
                   key={i}
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setCurrentStep(i)}
                   className={`h-[3px] rounded-full transition-all duration-300 ${
                     i === currentStep
@@ -230,6 +243,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
                 <button
                   key={opt.label}
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => toggleOption(currentStep, opt.label, multi)}
                   className={`group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all duration-150 ${
                     isSelected
@@ -278,6 +292,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
             {allowOther && (
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => toggleOther(currentStep, multi)}
                 className={`group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all duration-150 ${
                   isOtherOn
@@ -314,6 +329,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
                   <input
                     ref={otherInputRef}
                     type="text"
+                    disabled={isSubmitting}
                     value={otherTexts.get(currentStep) || ''}
                     onChange={(e) => setOtherText(currentStep, e.target.value)}
                     onKeyDown={(e) => {
@@ -342,6 +358,7 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
           <button
             type="button"
             onClick={handleSkip}
+            disabled={isSubmitting}
             className="text-[11px] text-gray-400 transition-colors hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
           >
             {isSingle ? 'Skip' : 'Skip all'}
@@ -349,9 +366,20 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
           </button>
 
           <div className="flex items-center gap-1.5">
+            {deliveryError ? (
+              <span className="text-[11px] font-medium text-red-600 dark:text-red-400">
+                {deliveryError}
+              </span>
+            ) : null}
+            {isSubmitting ? (
+              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                Submitting...
+              </span>
+            ) : null}
             {!isSingle && !isFirst && (
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setCurrentStep(s => s - 1)}
                 className="inline-flex items-center gap-0.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-gray-600 transition-all duration-150 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/60"
               >
@@ -366,15 +394,16 @@ export const AskUserQuestionPanel: React.FC<PermissionPanelProps> = ({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!hasCurrentSelection && !Object.keys(buildAnswers()).length}
+                disabled={isSubmitting || (!hasCurrentSelection && !Object.keys(buildAnswers()).length)}
                 className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-3.5 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-all duration-200 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none dark:from-blue-500 dark:to-blue-600"
               >
-                Submit
+                {request.deliveryState === 'failed' ? 'Retry submit' : 'Submit'}
                 <span className="ml-0.5 font-mono text-[9px] opacity-70">Enter</span>
               </button>
             ) : (
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setCurrentStep(s => s + 1)}
                 className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-3.5 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-all duration-200 hover:shadow-md dark:from-blue-500 dark:to-blue-600"
               >

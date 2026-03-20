@@ -3,6 +3,12 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { decodeHtmlEntities, formatUsageLimitText } from '../utils/chatFormatting';
 import { safeLocalStorage } from '../utils/chatStorage';
 import type { ChatMessage, PendingPermissionRequest } from '../types/types';
+import {
+  createPendingInteractiveRequest,
+  mergePendingInteractiveRequests,
+  setInteractiveRequestDeliveryState,
+  upsertPendingInteractiveRequest,
+} from '../utils/interactiveRequestTransport';
 import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
 
 type PendingViewSession = {
@@ -19,6 +25,7 @@ type LatestChatMessage = {
   input?: unknown;
   context?: unknown;
   error?: string;
+  code?: string;
   tool?: string;
   exitCode?: number;
   isProcessing?: boolean;
@@ -816,17 +823,14 @@ export function useChatRealtimeHandlers({
             if (previous.some((request) => request.requestId === requestId)) {
               return previous;
             }
-            return [
-              ...previous,
-              {
-                requestId,
-                toolName: latestMessage.toolName || 'UnknownTool',
-                input: latestMessage.input,
-                context: latestMessage.context,
-                sessionId: latestMessage.sessionId || null,
-                receivedAt: new Date(),
-              },
-            ];
+            return upsertPendingInteractiveRequest(previous, {
+              requestId,
+              toolName: latestMessage.toolName || 'UnknownTool',
+              input: latestMessage.input,
+              context: latestMessage.context,
+              sessionId: latestMessage.sessionId || null,
+              receivedAt: new Date(),
+            });
           });
         }
 
@@ -1387,25 +1391,22 @@ export function useChatRealtimeHandlers({
               return previous;
             }
 
-            return [
-              ...previous,
-              {
-                requestId,
-                provider: 'codex',
-                requestKind: latestMessage.requestKind || (
-                  latestMessage.type === 'codex-user-input-request'
-                    ? 'user-input'
-                    : latestMessage.type === 'codex-command-stdin-request'
-                      ? 'terminal-stdin'
-                      : 'approval'
-                ),
-                toolName: latestMessage.toolName || 'UnknownTool',
-                input: latestMessage.input,
-                context: latestMessage.context,
-                sessionId: latestMessage.sessionId || null,
-                receivedAt: new Date(),
-              },
-            ];
+            return upsertPendingInteractiveRequest(previous, {
+              requestId,
+              provider: 'codex',
+              requestKind: latestMessage.requestKind || (
+                latestMessage.type === 'codex-user-input-request'
+                  ? 'user-input'
+                  : latestMessage.type === 'codex-command-stdin-request'
+                    ? 'terminal-stdin'
+                    : 'approval'
+              ),
+              toolName: latestMessage.toolName || 'UnknownTool',
+              input: latestMessage.input,
+              context: latestMessage.context,
+              sessionId: latestMessage.sessionId || null,
+              receivedAt: new Date(),
+            });
           });
 
           setIsLoading(true);
@@ -1431,6 +1432,40 @@ export function useChatRealtimeHandlers({
           previous.filter((request) => request.requestId !== latestMessage.requestId),
         );
         break;
+
+      case 'codex-interactive-response-ack':
+        if (!latestMessage.requestId) {
+          break;
+        }
+        setPendingPermissionRequests((previous) =>
+          previous.filter((request) => request.requestId !== latestMessage.requestId),
+        );
+        break;
+
+      case 'codex-interactive-response-error':
+        if (!latestMessage.requestId) {
+          break;
+        }
+        {
+          const requestId = latestMessage.requestId;
+          if (latestMessage.code === 'not_found') {
+            setPendingPermissionRequests((previous) =>
+              previous.filter((request) => request.requestId !== requestId),
+            );
+            break;
+          }
+          setPendingPermissionRequests((previous) =>
+            setInteractiveRequestDeliveryState(
+              previous,
+              requestId,
+              'failed',
+              typeof latestMessage.error === 'string' && latestMessage.error.trim()
+                ? latestMessage.error
+                : 'Response was rejected. Please try again.',
+            ),
+          );
+          break;
+        }
 
       case 'codex-complete': {
         const codexPendingSessionId = sessionStorage.getItem('pendingSessionId');
@@ -1680,7 +1715,12 @@ export function useChatRealtimeHandlers({
           break;
         }
         const serverRequests = Array.isArray(latestMessage.data) ? latestMessage.data : [];
-        setPendingPermissionRequests(serverRequests);
+        setPendingPermissionRequests((previous) =>
+          mergePendingInteractiveRequests(
+            previous,
+            serverRequests.map((request) => createPendingInteractiveRequest(request as PendingPermissionRequest)),
+          ),
+        );
 
         const firstRequest = serverRequests[0] || null;
         if (firstRequest?.provider === 'codex') {

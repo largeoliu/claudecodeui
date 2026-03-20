@@ -436,9 +436,31 @@ function buildPendingQuestion(question) {
     header: question.header,
     question: question.question,
     options: Array.isArray(question.options) ? question.options : [],
-    multiSelect: false,
-    allowOther: Boolean(question.isOther),
+    multiSelect: Boolean(question.multiSelect),
+    allowOther: question.allowOther !== undefined ? Boolean(question.allowOther) : Boolean(question.isOther),
     isSecret: Boolean(question.isSecret),
+  };
+}
+
+function buildInteractiveResponseResult(pending) {
+  return {
+    ok: true,
+    requestId: pending.requestId,
+    sessionId: pending.sessionId,
+    requestKind: pending.requestKind,
+    toolName: pending.toolName,
+  };
+}
+
+function buildInteractiveResponseError(requestId, error, code = 'response_failed', pending = null) {
+  return {
+    ok: false,
+    requestId,
+    sessionId: pending?.sessionId || null,
+    requestKind: pending?.requestKind || null,
+    toolName: pending?.toolName || null,
+    code,
+    error,
   };
 }
 
@@ -1361,7 +1383,7 @@ class CodexAppServer {
   async respondToApproval(requestId, decision = {}) {
     const pending = this.pendingUiRequests.get(requestId);
     if (!pending) {
-      return false;
+      return buildInteractiveResponseError(requestId, 'Request is no longer pending.', 'not_found');
     }
 
     const { metadata } = pending;
@@ -1391,17 +1413,17 @@ class CodexAppServer {
       };
       this.sendResponse(requestId, result);
     } else {
-      return false;
+      return buildInteractiveResponseError(requestId, 'Unsupported approval request.', 'unsupported_request', pending);
     }
 
     this.deletePendingRequest(requestId, pending.sessionId);
-    return true;
+    return buildInteractiveResponseResult(pending);
   }
 
   async respondToUserInput(requestId, answers = {}) {
     const pending = this.pendingUiRequests.get(requestId);
     if (!pending || pending.requestKind !== 'user-input') {
-      return false;
+      return buildInteractiveResponseError(requestId, 'Request is no longer waiting for user input.', 'not_found', pending);
     }
 
     const normalizedAnswers = {};
@@ -1420,13 +1442,13 @@ class CodexAppServer {
     });
 
     this.deletePendingRequest(requestId, pending.sessionId);
-    return true;
+    return buildInteractiveResponseResult(pending);
   }
 
   async respondToTerminalInput(requestId, text = '') {
     const pending = this.pendingUiRequests.get(requestId);
     if (!pending || pending.requestKind !== 'terminal-stdin') {
-      return false;
+      return buildInteractiveResponseError(requestId, 'Request is no longer waiting for terminal input.', 'not_found', pending);
     }
 
     await this.sendRequest('turn/steer', {
@@ -1436,7 +1458,7 @@ class CodexAppServer {
     });
 
     this.deletePendingRequest(requestId, pending.sessionId);
-    return true;
+    return buildInteractiveResponseResult(pending);
   }
 
   deletePendingRequest(requestId, threadId) {

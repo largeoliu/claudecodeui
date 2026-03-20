@@ -5,6 +5,7 @@ export type Provider = SessionProvider;
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
 export type CodexInteractionMode = 'edit' | 'plan';
 export type CodexApprovalPolicy = 'untrusted' | 'on-request' | 'never';
+export type InteractiveRequestDeliveryState = 'idle' | 'submitting' | 'failed';
 
 export interface ChatImage {
   data: string;
@@ -82,6 +83,8 @@ export interface PendingPermissionRequest {
   context?: unknown;
   sessionId?: string | null;
   receivedAt?: Date | string;
+  deliveryState?: InteractiveRequestDeliveryState;
+  deliveryError?: string | null;
 }
 
 export interface QuestionOption {
@@ -103,7 +106,7 @@ export interface ChatInterfaceProps {
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
   ws: WebSocket | null;
-  sendMessage: (message: unknown) => void;
+  sendMessage: (message: unknown) => boolean;
   onFileOpen?: (filePath: string, diffInfo?: any) => void;
   onInputFocusChange?: (focused: boolean) => void;
   onSessionActive?: (sessionId?: string | null) => void;

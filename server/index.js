@@ -1543,18 +1543,96 @@ function handleChatConnection(ws, request) {
                 }
             } else if (data.type === 'codex-approval-response') {
                 if (data.requestId) {
-                    await respondToCodexApproval(data.requestId, {
-                        allow: Boolean(data.allow),
-                        rememberEntry: data.rememberEntry
-                    });
+                    console.log('[DEBUG] Codex approval response:', data.requestId);
+                    try {
+                        const result = await respondToCodexApproval(data.requestId, {
+                            allow: Boolean(data.allow),
+                            rememberEntry: data.rememberEntry
+                        });
+
+                        writer.send(result?.ok ? {
+                            type: 'codex-interactive-response-ack',
+                            requestId: data.requestId,
+                            sessionId: result.sessionId,
+                            requestKind: result.requestKind,
+                        } : {
+                            type: 'codex-interactive-response-error',
+                            requestId: data.requestId,
+                            sessionId: result?.sessionId || null,
+                            requestKind: result?.requestKind || 'approval',
+                            code: result?.code || 'response_failed',
+                            error: result?.error || 'Codex approval response was rejected.',
+                        });
+                    } catch (error) {
+                        console.error('[Codex] Failed to process approval response:', error);
+                        writer.send({
+                            type: 'codex-interactive-response-error',
+                            requestId: data.requestId,
+                            requestKind: 'approval',
+                            code: 'response_exception',
+                            error: error?.message || 'Codex approval response failed.',
+                        });
+                    }
                 }
             } else if (data.type === 'codex-user-input-response') {
                 if (data.requestId) {
-                    await respondToCodexUserInput(data.requestId, data.answers || {});
+                    console.log('[DEBUG] Codex user input response:', data.requestId);
+                    try {
+                        const result = await respondToCodexUserInput(data.requestId, data.answers || {});
+
+                        writer.send(result?.ok ? {
+                            type: 'codex-interactive-response-ack',
+                            requestId: data.requestId,
+                            sessionId: result.sessionId,
+                            requestKind: result.requestKind,
+                        } : {
+                            type: 'codex-interactive-response-error',
+                            requestId: data.requestId,
+                            sessionId: result?.sessionId || null,
+                            requestKind: result?.requestKind || 'user-input',
+                            code: result?.code || 'response_failed',
+                            error: result?.error || 'Codex user input response was rejected.',
+                        });
+                    } catch (error) {
+                        console.error('[Codex] Failed to process user input response:', error);
+                        writer.send({
+                            type: 'codex-interactive-response-error',
+                            requestId: data.requestId,
+                            requestKind: 'user-input',
+                            code: 'response_exception',
+                            error: error?.message || 'Codex user input response failed.',
+                        });
+                    }
                 }
             } else if (data.type === 'codex-command-stdin-response') {
                 if (data.requestId) {
-                    await respondToCodexCommandStdin(data.requestId, data.text || '');
+                    console.log('[DEBUG] Codex terminal input response:', data.requestId);
+                    try {
+                        const result = await respondToCodexCommandStdin(data.requestId, data.text || '');
+
+                        writer.send(result?.ok ? {
+                            type: 'codex-interactive-response-ack',
+                            requestId: data.requestId,
+                            sessionId: result.sessionId,
+                            requestKind: result.requestKind,
+                        } : {
+                            type: 'codex-interactive-response-error',
+                            requestId: data.requestId,
+                            sessionId: result?.sessionId || null,
+                            requestKind: result?.requestKind || 'terminal-stdin',
+                            code: result?.code || 'response_failed',
+                            error: result?.error || 'Codex terminal input response was rejected.',
+                        });
+                    } catch (error) {
+                        console.error('[Codex] Failed to process terminal input response:', error);
+                        writer.send({
+                            type: 'codex-interactive-response-error',
+                            requestId: data.requestId,
+                            requestKind: 'terminal-stdin',
+                            code: 'response_exception',
+                            error: error?.message || 'Codex terminal input response failed.',
+                        });
+                    }
                 }
             } else if (data.type === 'cursor-abort') {
                 console.log('[DEBUG] Abort Cursor session:', data.sessionId);

@@ -16,8 +16,13 @@ export const CodexTerminalInputPanel: React.FC<PermissionPanelProps> = ({
     () => (typeof input?.prompt === 'string' && input.prompt.trim() ? input.prompt : 'Terminal input required'),
     [input?.prompt],
   );
+  const isSubmitting = request.deliveryState === 'submitting';
+  const deliveryError = request.deliveryState === 'failed' ? request.deliveryError : null;
 
   const handleSubmit = () => {
+    if (isSubmitting) {
+      return;
+    }
     onDecision(request.requestId, {
       allow: true,
       updatedInput: { text },
@@ -38,6 +43,13 @@ export const CodexTerminalInputPanel: React.FC<PermissionPanelProps> = ({
         )}
       </div>
 
+      {deliveryError ? (
+        <div className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">{deliveryError}</div>
+      ) : null}
+      {isSubmitting ? (
+        <div className="mt-2 text-xs font-medium text-sky-700 dark:text-sky-300">Submitting...</div>
+      ) : null}
+
       {input?.observedStdin ? (
         <details className="mt-2">
           <summary className="cursor-pointer text-xs text-sky-800 hover:text-sky-900 dark:text-sky-200 dark:hover:text-sky-100">
@@ -51,6 +63,7 @@ export const CodexTerminalInputPanel: React.FC<PermissionPanelProps> = ({
 
       <textarea
         value={text}
+        disabled={isSubmitting}
         onChange={(event) => setText(event.target.value)}
         placeholder="Type the text to send to the terminal"
         className="mt-3 min-h-24 w-full rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-sky-950 outline-none ring-0 placeholder:text-sky-400 focus:border-sky-400 dark:border-sky-800 dark:bg-gray-950 dark:text-sky-100 dark:placeholder:text-sky-500"
@@ -60,12 +73,14 @@ export const CodexTerminalInputPanel: React.FC<PermissionPanelProps> = ({
         <button
           type="button"
           onClick={handleSubmit}
+          disabled={isSubmitting}
           className="inline-flex items-center gap-2 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-700"
         >
-          Send input
+          {request.deliveryState === 'failed' ? 'Retry send input' : 'Send input'}
         </button>
         <button
           type="button"
+          disabled={isSubmitting}
           onClick={() => onDecision(request.requestId, { allow: true, updatedInput: { text: '' } })}
           className="inline-flex items-center gap-2 rounded-md border border-sky-300 px-3 py-1.5 text-xs font-medium text-sky-800 transition-colors hover:bg-sky-100 dark:border-sky-700 dark:text-sky-100 dark:hover:bg-sky-900/30"
         >

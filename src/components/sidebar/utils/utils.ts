@@ -40,10 +40,6 @@ export const persistStarredProjects = (starredProjects: Set<string>) => {
 };
 
 export const getSessionDate = (session: SessionWithProvider): Date => {
-  if (session.__provider === 'cursor') {
-    return new Date(session.createdAt || 0);
-  }
-
   if (session.__provider === 'codex') {
     return new Date(session.createdAt || session.lastActivity || 0);
   }
@@ -52,10 +48,6 @@ export const getSessionDate = (session: SessionWithProvider): Date => {
 };
 
 export const getSessionName = (session: SessionWithProvider, t: TFunction): string => {
-  if (session.__provider === 'cursor') {
-    return session.summary || session.name || t('projects.untitledSession');
-  }
-
   if (session.__provider === 'codex') {
     return session.summary || session.name || t('projects.codexSession');
   }
@@ -68,10 +60,6 @@ export const getSessionName = (session: SessionWithProvider, t: TFunction): stri
 };
 
 export const getSessionTime = (session: SessionWithProvider): string => {
-  if (session.__provider === 'cursor') {
-    return String(session.createdAt || '');
-  }
-
   if (session.__provider === 'codex') {
     return String(session.createdAt || session.lastActivity || '');
   }
@@ -89,7 +77,6 @@ export const createSessionViewModel = (
   const isRecent = diffInMinutes < 10;
 
   return {
-    isCursorSession: session.__provider === 'cursor',
     isCodexSession: session.__provider === 'codex',
     isGeminiSession: session.__provider === 'gemini',
     isActive: isRecent,
@@ -109,11 +96,6 @@ export const getAllSessions = (
     ...(additionalSessions[project.name] || []),
   ].map((session) => ({ ...session, __provider: 'claude' as const }));
 
-  const cursorSessions = (project.cursorSessions || []).map((session) => ({
-    ...session,
-    __provider: 'cursor' as const,
-  }));
-
   const codexSessions = (project.codexSessions || []).map((session) => ({
     ...session,
     __provider: 'codex' as const,
@@ -124,7 +106,7 @@ export const getAllSessions = (
     __provider: 'gemini' as const,
   }));
 
-  return [...claudeSessions, ...cursorSessions, ...codexSessions, ...geminiSessions].sort(
+  return [...claudeSessions, ...codexSessions, ...geminiSessions].sort(
     (a, b) => getSessionDate(b).getTime() - getSessionDate(a).getTime(),
   );
 };

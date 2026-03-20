@@ -24,7 +24,6 @@ describe('sidebar utils', () => {
     displayName: 'Alpha',
     fullPath: '/work/alpha',
     sessions: [{ id: 'claude-1', summary: 'Claude Summary', lastActivity: '2026-03-20T11:00:00Z' }],
-    cursorSessions: [{ id: 'cursor-1', name: 'Cursor Name', createdAt: '2026-03-20T10:00:00Z' }],
     codexSessions: [{ id: 'codex-1', summary: 'Codex Summary', createdAt: '2026-03-20T09:00:00Z' }],
     geminiSessions: [{ id: 'gemini-1', summary: 'Gemini Summary', lastActivity: '2026-03-20T08:00:00Z' }],
     taskmaster: { hasTaskmaster: true },
@@ -49,16 +48,12 @@ describe('sidebar utils', () => {
   });
 
   it('derives session names, times, and dates per provider', () => {
-    expect(getSessionName({ __provider: 'cursor', summary: '', name: 'Cursor Name' }, t)).toBe('Cursor Name');
     expect(getSessionName({ __provider: 'codex', summary: '', name: '' }, t)).toBe('projects.codexSession');
     expect(getSessionName({ __provider: 'gemini', summary: '', name: '' }, t)).toBe('projects.newSession');
     expect(getSessionName({ __provider: 'claude', summary: '' }, t)).toBe('projects.newSession');
 
-    expect(getSessionTime({ __provider: 'cursor', createdAt: '2026-03-20T10:00:00Z' })).toBe('2026-03-20T10:00:00Z');
     expect(getSessionTime({ __provider: 'codex', lastActivity: '2026-03-20T09:00:00Z' })).toBe('2026-03-20T09:00:00Z');
     expect(getSessionTime({ __provider: 'claude', lastActivity: '2026-03-20T11:00:00Z' })).toBe('2026-03-20T11:00:00Z');
-
-    expect(getSessionDate({ __provider: 'cursor', createdAt: '2026-03-20T10:00:00Z' }).toISOString()).toBe('2026-03-20T10:00:00.000Z');
   });
 
   it('creates session view models and merges sessions across providers', () => {
@@ -70,7 +65,6 @@ describe('sidebar utils', () => {
     );
 
     expect(model).toEqual({
-      isCursorSession: false,
       isCodexSession: false,
       isGeminiSession: false,
       isActive: true,
@@ -81,7 +75,7 @@ describe('sidebar utils', () => {
     });
 
     const allSessions = getAllSessions(projectA, { alpha: [{ id: 'extra', summary: 'Extra', lastActivity: '2026-03-20T12:00:00Z' }] });
-    expect(allSessions.map((session) => session.id)).toEqual(['extra', 'claude-1', 'cursor-1', 'codex-1', 'gemini-1']);
+    expect(allSessions.map((session) => session.id)).toEqual(['extra', 'claude-1', 'codex-1', 'gemini-1']);
     expect(getProjectLastActivity(projectA, { alpha: [{ id: 'extra', summary: 'Extra', lastActivity: '2026-03-20T12:00:00Z' }] }).toISOString()).toBe('2026-03-20T12:00:00.000Z');
   });
 

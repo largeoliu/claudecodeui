@@ -46,7 +46,6 @@ import mime from 'mime-types';
 
 import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations } from './projects.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from './claude-sdk.js';
-import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
 import {
     queryCodex,
     abortCodexSession,
@@ -64,7 +63,6 @@ import sessionManager from './sessionManager.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
 import mcpRoutes from './routes/mcp.js';
-import cursorRoutes from './routes/cursor.js';
 import taskmasterRoutes from './routes/taskmaster.js';
 import mcpUtilsRoutes from './routes/mcp-utils.js';
 import commandsRoutes from './routes/commands.js';
@@ -87,12 +85,11 @@ import { validateApiKey, authenticateToken, authenticateWebSocket } from './midd
 import { IS_PLATFORM } from './constants/config.js';
 import { getConnectableHost } from '../shared/networkHosts.js';
 
-const VALID_PROVIDERS = ['claude', 'codex', 'cursor', 'gemini'];
+const VALID_PROVIDERS = ['claude', 'codex', 'gemini'];
 
 // File system watchers for provider project/session folders
 const PROVIDER_WATCH_PATHS = [
     { provider: 'claude', rootPath: path.join(os.homedir(), '.claude', 'projects') },
-    { provider: 'cursor', rootPath: path.join(os.homedir(), '.cursor', 'chats') },
     { provider: 'codex', rootPath: path.join(os.homedir(), '.codex', 'sessions') },
     { provider: 'gemini', rootPath: path.join(os.homedir(), '.gemini', 'projects') },
     { provider: 'gemini_sessions', rootPath: path.join(os.homedir(), '.gemini', 'sessions') }
@@ -125,7 +122,7 @@ function broadcastProgress(progress) {
     });
 }
 
-// Setup file system watchers for Claude, Cursor, and Codex project/session folders
+// Setup file system watchers for Claude, Codex, and Gemini project/session folders
 async function setupProjectsWatcher() {
     const chokidar = (await import('chokidar')).default;
 
@@ -380,9 +377,6 @@ app.use('/api/git', authenticateToken, gitRoutes);
 
 // MCP API Routes (protected)
 app.use('/api/mcp', authenticateToken, mcpRoutes);
-
-// Cursor API Routes (protected)
-app.use('/api/cursor', authenticateToken, cursorRoutes);
 
 // TaskMaster API Routes (protected)
 app.use('/api/taskmaster', authenticateToken, taskmasterRoutes);
@@ -1481,12 +1475,6 @@ function handleChatConnection(ws, request) {
 
                 // Use Claude Agents SDK
                 await queryClaudeSDK(data.command, data.options, writer);
-            } else if (data.type === 'cursor-command') {
-                console.log('[DEBUG] Cursor message:', data.command || '[Continue/Resume]');
-                console.log('📁 Project:', data.options?.cwd || 'Unknown');
-                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
-                console.log('🤖 Model:', data.options?.model || 'default');
-                await spawnCursor(data.command, data.options, writer);
             } else if (data.type === 'codex-command') {
                 console.log('[DEBUG] Codex message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
@@ -1499,22 +1487,12 @@ function handleChatConnection(ws, request) {
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
                 await spawnGemini(data.command, data.options, writer);
-            } else if (data.type === 'cursor-resume') {
-                // Backward compatibility: treat as cursor-command with resume and no prompt
-                console.log('[DEBUG] Cursor resume session (compat):', data.sessionId);
-                await spawnCursor('', {
-                    sessionId: data.sessionId,
-                    resume: true,
-                    cwd: data.options?.cwd
-                }, writer);
             } else if (data.type === 'abort-session') {
                 console.log('[DEBUG] Abort session request:', data.sessionId);
                 const provider = data.provider || 'claude';
                 let success;
 
-                if (provider === 'cursor') {
-                    success = abortCursorSession(data.sessionId);
-                } else if (provider === 'codex') {
+                if (provider === 'codex') {
                     success = abortCodexSession(data.sessionId);
                 } else if (provider === 'gemini') {
                     success = abortGeminiSession(data.sessionId);
@@ -1649,24 +1627,13 @@ function handleChatConnection(ws, request) {
                         });
                     }
                 }
-            } else if (data.type === 'cursor-abort') {
-                console.log('[DEBUG] Abort Cursor session:', data.sessionId);
-                const success = abortCursorSession(data.sessionId);
-                writer.send({
-                    type: 'session-aborted',
-                    sessionId: data.sessionId,
-                    provider: 'cursor',
-                    success
-                });
             } else if (data.type === 'check-session-status') {
                 // Check if a specific session is currently processing
                 const provider = data.provider || 'claude';
                 const sessionId = data.sessionId;
                 let isActive;
 
-                if (provider === 'cursor') {
-                    isActive = isCursorSessionActive(sessionId);
-                } else if (provider === 'codex') {
+                if (provider === 'codex') {
                     isActive = isCodexSessionActive(sessionId);
                     if (isActive) {
                         reconnectCodexSessionWriter(sessionId, writer);
@@ -1711,7 +1678,6 @@ function handleChatConnection(ws, request) {
                 // Get all currently active sessions
                 const activeSessions = {
                     claude: getActiveClaudeSDKSessions(),
-                    cursor: getActiveCursorSessions(),
                     codex: getActiveCodexSessions(),
                     gemini: getActiveGeminiSessions()
                 };
@@ -1767,10 +1733,9 @@ function handleShellConnection(ws) {
                 urlDetectionBuffer = '';
                 announcedAuthUrls.clear();
 
-                // Login commands (Claude/Cursor auth) should never reuse cached sessions
+                // Login commands (Claude auth) should never reuse cached sessions
                 const isLoginCommand = initialCommand && (
                     initialCommand.includes('setup-token') ||
-                    initialCommand.includes('cursor-agent login') ||
                     initialCommand.includes('auth login')
                 );
 
@@ -1830,7 +1795,7 @@ function handleShellConnection(ws) {
                 if (isPlainShell) {
                     welcomeMsg = `\x1b[36mStarting terminal in: ${projectPath}\x1b[0m\r\n`;
                 } else {
-                    const providerName = provider === 'cursor' ? 'Cursor' : (provider === 'codex' ? 'Codex' : (provider === 'gemini' ? 'Gemini' : 'Claude'));
+                    const providerName = provider === 'codex' ? 'Codex' : (provider === 'gemini' ? 'Gemini' : 'Claude');
                     welcomeMsg = hasSession ?
                         `\x1b[36mResuming ${providerName} session ${sessionId} in: ${projectPath}\x1b[0m\r\n` :
                         `\x1b[36mStarting new ${providerName} session in: ${projectPath}\x1b[0m\r\n`;
@@ -1866,12 +1831,6 @@ function handleShellConnection(ws) {
                     if (isPlainShell) {
                         // Plain shell mode - run the initial command in the project directory
                         shellCommand = initialCommand;
-                    } else if (provider === 'cursor') {
-                        if (hasSession && sessionId) {
-                            shellCommand = `cursor-agent --resume="${sessionId}"`;
-                        } else {
-                            shellCommand = 'cursor-agent';
-                        }
                     } else if (provider === 'codex') {
                         // Use codex command; attempt to resume and fall back to a new session when the resume fails.
                         if (hasSession && sessionId) {
@@ -2355,17 +2314,6 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
         const safeSessionId = String(sessionId).replace(/[^a-zA-Z0-9._-]/g, '');
         if (!safeSessionId || safeSessionId !== String(sessionId)) {
             return res.status(400).json({ error: 'Invalid sessionId' });
-        }
-
-        // Handle Cursor sessions - they use SQLite and don't have token usage info
-        if (provider === 'cursor') {
-            return res.json({
-                used: 0,
-                total: 0,
-                breakdown: { input: 0, cacheCreation: 0, cacheRead: 0 },
-                unsupported: true,
-                message: 'Token usage tracking not available for Cursor sessions'
-            });
         }
 
         // Handle Gemini sessions - they are raw logs in our current setup

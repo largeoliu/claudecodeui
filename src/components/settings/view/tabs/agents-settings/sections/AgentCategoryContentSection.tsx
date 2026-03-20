@@ -9,14 +9,11 @@ export default function AgentCategoryContentSection({
   agentContextById,
   claudePermissions,
   onClaudePermissionsChange,
-  cursorPermissions,
-  onCursorPermissionsChange,
   codexInteractionMode,
   onCodexInteractionModeChange,
   codexApprovalPolicy,
   onCodexApprovalPolicyChange,
   mcpServers,
-  cursorMcpServers,
   codexMcpServers,
   mcpTestResults,
   mcpServerTools,
@@ -29,9 +26,6 @@ export default function AgentCategoryContentSection({
   onOpenCodexMcpForm,
   onDeleteCodexMcpServer,
 }: AgentCategoryContentSectionProps) {
-  // Cursor MCP add/edit/delete was previously a placeholder and is intentionally preserved.
-  const noopCursorMcpAction = () => {};
-
   return (
     <div className="flex-1 overflow-y-auto p-3 md:p-4">
       {selectedCategory === 'account' && (
@@ -60,24 +54,6 @@ export default function AgentCategoryContentSection({
         />
       )}
 
-      {selectedCategory === 'permissions' && selectedAgent === 'cursor' && (
-        <PermissionsContent
-          agent="cursor"
-          skipPermissions={cursorPermissions.skipPermissions}
-          onSkipPermissionsChange={(value) => {
-            onCursorPermissionsChange({ ...cursorPermissions, skipPermissions: value });
-          }}
-          allowedCommands={cursorPermissions.allowedCommands}
-          onAllowedCommandsChange={(value) => {
-            onCursorPermissionsChange({ ...cursorPermissions, allowedCommands: value });
-          }}
-          disallowedCommands={cursorPermissions.disallowedCommands}
-          onDisallowedCommandsChange={(value) => {
-            onCursorPermissionsChange({ ...cursorPermissions, disallowedCommands: value });
-          }}
-        />
-      )}
-
       {selectedCategory === 'permissions' && selectedAgent === 'codex' && (
         <PermissionsContent
           agent="codex"
@@ -101,16 +77,6 @@ export default function AgentCategoryContentSection({
           serverTools={mcpServerTools}
           toolsLoading={mcpToolsLoading}
           deleteError={deleteError}
-        />
-      )}
-
-      {selectedCategory === 'mcp' && selectedAgent === 'cursor' && (
-        <McpServersContent
-          agent="cursor"
-          servers={cursorMcpServers}
-          onAdd={noopCursorMcpAction}
-          onEdit={noopCursorMcpAction}
-          onDelete={noopCursorMcpAction}
         />
       )}
 

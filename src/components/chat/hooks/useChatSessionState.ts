@@ -5,7 +5,6 @@ import type { ChatMessage, Provider } from '../types/types';
 import type { Project, ProjectSession } from '../../../types/app';
 import { safeLocalStorage } from '../utils/chatStorage';
 import {
-  convertCursorSessionMessages,
   convertSessionMessages,
   createCachedDiffCalculator,
   type DiffCalculator,
@@ -157,30 +156,6 @@ export function useChatSessionState({
     [],
   );
 
-  const loadCursorSessionMessages = useCallback(async (projectPath: string, sessionId: string) => {
-    if (!projectPath || !sessionId) {
-      return [] as ChatMessage[];
-    }
-
-    setIsLoadingSessionMessages(true);
-    try {
-      const url = `/api/cursor/sessions/${encodeURIComponent(sessionId)}?projectPath=${encodeURIComponent(projectPath)}`;
-      const response = await authenticatedFetch(url);
-      if (!response.ok) {
-        return [];
-      }
-
-      const data = await response.json();
-      const blobs = (data?.session?.messages || []) as any[];
-      return convertCursorSessionMessages(blobs, projectPath);
-    } catch (error) {
-      console.error('Error loading Cursor session messages:', error);
-      return [];
-    } finally {
-      setIsLoadingSessionMessages(false);
-    }
-  }, []);
-
   const convertedMessages = useMemo(() => {
     return convertSessionMessages(sessionMessages);
   }, [sessionMessages]);
@@ -222,9 +197,6 @@ export function useChatSessionState({
       }
 
       const sessionProvider = selectedSession.__provider || 'claude';
-      if (sessionProvider === 'cursor') {
-        return false;
-      }
 
       isLoadingMoreRef.current = true;
       const previousScrollHeight = container.scrollHeight;
@@ -394,32 +366,18 @@ export function useChatSessionState({
           return;
         }
 
-        if (provider === 'cursor') {
-          setCurrentSessionId(selectedSession.id);
-          sessionStorage.setItem('cursorSessionId', selectedSession.id);
+        setCurrentSessionId(selectedSession.id);
 
-          if (!isSystemSessionChange) {
-            const projectPath = selectedProject.fullPath || selectedProject.path || '';
-            const converted = await loadCursorSessionMessages(projectPath, selectedSession.id);
-            setSessionMessages([]);
-            setChatMessages(converted);
-          } else {
-            setIsSystemSessionChange(false);
-          }
+        if (!isSystemSessionChange) {
+          const messages = await loadSessionMessages(
+            selectedProject.name,
+            selectedSession.id,
+            false,
+            selectedSession.__provider || 'claude',
+          );
+          setSessionMessages(messages);
         } else {
-          setCurrentSessionId(selectedSession.id);
-
-          if (!isSystemSessionChange) {
-            const messages = await loadSessionMessages(
-              selectedProject.name,
-              selectedSession.id,
-              false,
-              selectedSession.__provider || 'claude',
-            );
-            setSessionMessages(messages);
-          } else {
-            setIsSystemSessionChange(false);
-          }
+          setIsSystemSessionChange(false);
         }
 
         // Update the last loaded session key
@@ -436,7 +394,6 @@ export function useChatSessionState({
         }
 
         setCurrentSessionId(null);
-        sessionStorage.removeItem('cursorSessionId');
         messagesOffsetRef.current = 0;
         setHasMoreMessages(false);
         setTotalMessages(0);
@@ -453,7 +410,6 @@ export function useChatSessionState({
   }, [
     // Intentionally exclude currentSessionId: this effect sets it and should not retrigger another full load.
     isSystemSessionChange,
-    loadCursorSessionMessages,
     loadSessionMessages,
     pendingViewSessionRef,
     resetStreamingState,
@@ -472,19 +428,11 @@ export function useChatSessionState({
       try {
         const provider = selectedSession.__provider || (localStorage.getItem('selected-provider') as Provider) || 'claude';
 
-        if (provider === 'cursor') {
-          const projectPath = selectedProject.fullPath || selectedProject.path || '';
-          const converted = await loadCursorSessionMessages(projectPath, selectedSession.id);
-          setSessionMessages([]);
-          setChatMessages(converted);
-          return;
-        }
-
         const messages = await loadSessionMessages(
           selectedProject.name,
           selectedSession.id,
           false,
-          selectedSession.__provider || 'claude',
+          provider,
         );
         setSessionMessages(messages);
 
@@ -502,7 +450,6 @@ export function useChatSessionState({
     autoScrollToBottom,
     externalMessageUpdate,
     isNearBottom,
-    loadCursorSessionMessages,
     loadSessionMessages,
     scrollToBottom,
     selectedProject,
@@ -569,31 +516,29 @@ export function useChatSessionState({
       // (hasMoreMessages may not be set yet due to race with loading effect)
       if (!allMessagesLoadedRef.current && selectedSession && selectedProject) {
         const sessionProvider = selectedSession.__provider || 'claude';
-        if (sessionProvider !== 'cursor') {
-          try {
-            const response = await (api.sessionMessages as any)(
-              selectedProject.name,
-              selectedSession.id,
-              null,
-              0,
-              sessionProvider,
-            );
-            if (response.ok) {
-              const data = await response.json();
-              const allMessages = data.messages || data;
-              setSessionMessages(Array.isArray(allMessages) ? allMessages : []);
-              setHasMoreMessages(false);
-              setTotalMessages(Array.isArray(allMessages) ? allMessages.length : 0);
-              messagesOffsetRef.current = Array.isArray(allMessages) ? allMessages.length : 0;
-              setVisibleMessageCount(Infinity);
-              setAllMessagesLoaded(true);
-              allMessagesLoadedRef.current = true;
-              // Wait for messages to render after state update
-              await new Promise(resolve => setTimeout(resolve, 300));
-            }
-          } catch {
-            // Fall through and scroll in current messages
+        try {
+          const response = await (api.sessionMessages as any)(
+            selectedProject.name,
+            selectedSession.id,
+            null,
+            0,
+            sessionProvider,
+          );
+          if (response.ok) {
+            const data = await response.json();
+            const allMessages = data.messages || data;
+            setSessionMessages(Array.isArray(allMessages) ? allMessages : []);
+            setHasMoreMessages(false);
+            setTotalMessages(Array.isArray(allMessages) ? allMessages.length : 0);
+            messagesOffsetRef.current = Array.isArray(allMessages) ? allMessages.length : 0;
+            setVisibleMessageCount(Infinity);
+            setAllMessagesLoaded(true);
+            allMessagesLoadedRef.current = true;
+            // Wait for messages to render after state update
+            await new Promise(resolve => setTimeout(resolve, 300));
           }
+        } catch {
+          // Fall through and scroll in current messages
         }
       }
       setVisibleMessageCount(Infinity);
@@ -788,18 +733,6 @@ export function useChatSessionState({
     if (!selectedSession || !selectedProject) return;
     if (isLoadingAllMessages) return;
     const sessionProvider = selectedSession.__provider || 'claude';
-    if (sessionProvider === 'cursor') {
-      setVisibleMessageCount(Infinity);
-      setAllMessagesLoaded(true);
-      allMessagesLoadedRef.current = true;
-      setLoadAllJustFinished(true);
-      if (loadAllFinishedTimerRef.current) clearTimeout(loadAllFinishedTimerRef.current);
-      loadAllFinishedTimerRef.current = setTimeout(() => {
-        setLoadAllJustFinished(false);
-        setShowLoadAllOverlay(false);
-      }, 1000);
-      return;
-    }
 
     const requestSessionId = selectedSession.id;
 
@@ -905,6 +838,5 @@ export function useChatSessionState({
     isNearBottom,
     handleScroll,
     loadSessionMessages,
-    loadCursorSessionMessages,
   };
 }

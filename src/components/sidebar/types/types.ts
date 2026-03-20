@@ -42,7 +42,6 @@ export type SidebarProps = {
 };
 
 export type SessionViewModel = {
-  isCursorSession: boolean;
   isCodexSession: boolean;
   isGeminiSession: boolean;
   isActive: boolean;

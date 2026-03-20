@@ -17,27 +17,6 @@ export const MODEL_CONTEXT_WINDOWS = {
   'opusplan': 200000,
   'sonnet[1m]': 1050000,
 
-  // Cursor models (mixed providers)
-  'opus-4.6-thinking': 200000,
-  'opus-4.5-thinking': 200000,
-  'sonnet-4.5': 200000,
-  'sonnet-4.5-thinking': 200000,
-  'opus-4.5': 200000,
-  'opus-4.1': 200000,
-  'composer-1': 200000,
-  'auto': 200000,
-
-  // Cursor GPT models
-  'gpt-5.3-codex': 400000,
-  'gpt-5.2-high': 400000,
-  'gpt-5.2': 400000,
-  'gpt-5.1': 400000,
-  'gpt-5.1-high': 400000,
-  'gpt-5.1-codex': 400000,
-  'gpt-5.1-codex-high': 400000,
-  'gpt-5.1-codex-max': 2000000,
-  'gpt-5.1-codex-max-high': 2000000,
-
   // Codex (OpenAI) models
   'gpt-5.4': 1050000,
   'gpt-5.3-codex': 400000,
@@ -87,35 +66,6 @@ export const CLAUDE_MODELS = {
   ],
 
   DEFAULT: "sonnet",
-};
-
-/**
- * Cursor Models
- */
-export const CURSOR_MODELS = {
-  OPTIONS: [
-    { value: "opus-4.6-thinking", label: "Claude 4.6 Opus (Thinking)" },
-    { value: "gpt-5.3-codex", label: "GPT-5.3" },
-    { value: "gpt-5.2-high", label: "GPT-5.2 High" },
-    { value: "gemini-3-pro", label: "Gemini 3 Pro" },
-    { value: "opus-4.5-thinking", label: "Claude 4.5 Opus (Thinking)" },
-    { value: "gpt-5.2", label: "GPT-5.2" },
-    { value: "gpt-5.1", label: "GPT-5.1" },
-    { value: "gpt-5.1-high", label: "GPT-5.1 High" },
-    { value: "composer-1", label: "Composer 1" },
-    { value: "auto", label: "Auto" },
-    { value: "sonnet-4.5", label: "Claude 4.5 Sonnet" },
-    { value: "sonnet-4.5-thinking", label: "Claude 4.5 Sonnet (Thinking)" },
-    { value: "opus-4.5", label: "Claude 4.5 Opus" },
-    { value: "gpt-5.1-codex", label: "GPT-5.1 Codex" },
-    { value: "gpt-5.1-codex-high", label: "GPT-5.1 Codex High" },
-    { value: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max" },
-    { value: "gpt-5.1-codex-max-high", label: "GPT-5.1 Codex Max High" },
-    { value: "opus-4.1", label: "Claude 4.1 Opus" },
-    { value: "grok", label: "Grok" },
-  ],
-
-  DEFAULT: "gpt-5-3-codex",
 };
 
 /**

@@ -84,8 +84,6 @@ export const api = {
     let url;
     if (provider === 'codex') {
       url = `/api/codex/sessions/${sessionId}/messages${queryString ? `?${queryString}` : ''}`;
-    } else if (provider === 'cursor') {
-      url = `/api/cursor/sessions/${sessionId}/messages${queryString ? `?${queryString}` : ''}`;
     } else if (provider === 'gemini') {
       url = `/api/gemini/sessions/${sessionId}/messages${queryString ? `?${queryString}` : ''}`;
     } else {

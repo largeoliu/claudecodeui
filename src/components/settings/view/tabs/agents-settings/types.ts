@@ -5,7 +5,6 @@ import type {
   ClaudePermissionsState,
   CodexApprovalPolicy,
   CodexInteractionMode,
-  CursorPermissionsState,
   GeminiPermissionMode,
   McpServer,
   McpToolsResult,
@@ -21,17 +20,13 @@ export type AgentContextByProvider = Record<AgentProvider, AgentContext>;
 
 export type AgentsSettingsTabProps = {
   claudeAuthStatus: AuthStatus;
-  cursorAuthStatus: AuthStatus;
   codexAuthStatus: AuthStatus;
   geminiAuthStatus: AuthStatus;
   onClaudeLogin: () => void;
-  onCursorLogin: () => void;
   onCodexLogin: () => void;
   onGeminiLogin: () => void;
   claudePermissions: ClaudePermissionsState;
   onClaudePermissionsChange: (value: ClaudePermissionsState) => void;
-  cursorPermissions: CursorPermissionsState;
-  onCursorPermissionsChange: (value: CursorPermissionsState) => void;
   codexInteractionMode: CodexInteractionMode;
   onCodexInteractionModeChange: (value: CodexInteractionMode) => void;
   codexApprovalPolicy: CodexApprovalPolicy;
@@ -39,7 +34,6 @@ export type AgentsSettingsTabProps = {
   geminiPermissionMode: GeminiPermissionMode;
   onGeminiPermissionModeChange: (value: GeminiPermissionMode) => void;
   mcpServers: McpServer[];
-  cursorMcpServers: McpServer[];
   codexMcpServers: McpServer[];
   mcpTestResults: Record<string, McpTestResult>;
   mcpServerTools: Record<string, McpToolsResult>;
@@ -70,8 +64,6 @@ export type AgentCategoryContentSectionProps = {
   agentContextById: AgentContextByProvider;
   claudePermissions: ClaudePermissionsState;
   onClaudePermissionsChange: (value: ClaudePermissionsState) => void;
-  cursorPermissions: CursorPermissionsState;
-  onCursorPermissionsChange: (value: CursorPermissionsState) => void;
   codexInteractionMode: CodexInteractionMode;
   onCodexInteractionModeChange: (value: CodexInteractionMode) => void;
   codexApprovalPolicy: CodexApprovalPolicy;
@@ -79,7 +71,6 @@ export type AgentCategoryContentSectionProps = {
   geminiPermissionMode: GeminiPermissionMode;
   onGeminiPermissionModeChange: (value: GeminiPermissionMode) => void;
   mcpServers: McpServer[];
-  cursorMcpServers: McpServer[];
   codexMcpServers: McpServer[];
   mcpTestResults: Record<string, McpTestResult>;
   mcpServerTools: Record<string, McpToolsResult>;

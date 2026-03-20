@@ -15,6 +15,10 @@ import type { CodexReasoningEffort } from '../constants/codexReasoningEfforts';
 import { thinkingModes } from '../constants/thinkingModes';
 import { grantClaudeToolPermission } from '../utils/chatPermissions';
 import { safeLocalStorage } from '../utils/chatStorage';
+import {
+  applyInteractiveRequestDispatchResults,
+  buildInteractiveResponseMessage,
+} from '../utils/interactiveRequestTransport';
 import type {
   CodexApprovalPolicy,
   CodexInteractionMode,
@@ -49,7 +53,7 @@ interface UseChatComposerStateArgs {
   isLoading: boolean;
   canAbortSession: boolean;
   tokenBudget: Record<string, unknown> | null;
-  sendMessage: (message: unknown) => void;
+  sendMessage: (message: unknown) => boolean;
   sendByCtrlEnter?: boolean;
   onSessionActive?: (sessionId?: string | null) => void;
   onSessionProcessing?: (sessionId?: string | null) => void;
@@ -581,11 +585,11 @@ export function useChatComposerState({
 
       setChatMessages((previous) => [...previous, userMessage]);
       setIsLoading(true); // Processing banner starts
-      setCanAbortSession(true);
+      setCanAbortSession(false);
       setClaudeStatus({
         text: 'Processing',
         tokens: 0,
-        can_interrupt: true,
+        can_interrupt: false,
       });
 
       setIsUserScrolledUp(false);
@@ -982,73 +986,33 @@ export function useChatComposerState({
 
       validIds.forEach((requestId) => {
         const request = requestLookup.get(requestId);
-        if (request?.provider === 'codex') {
-          if (request.requestKind === 'user-input') {
-            const updatedInput =
-              decision?.updatedInput && typeof decision.updatedInput === 'object'
-                ? (decision.updatedInput as Record<string, unknown>)
-                : null;
-            const answers =
-              updatedInput?.answers && typeof updatedInput.answers === 'object' && !Array.isArray(updatedInput.answers)
-                ? updatedInput.answers
-                : {};
-
-            sendMessage({
-              type: 'codex-user-input-response',
-              requestId,
-              answers,
-            });
-            return;
-          }
-
-          if (request.requestKind === 'terminal-stdin') {
-            const updatedInput =
-              decision?.updatedInput && typeof decision.updatedInput === 'object'
-                ? (decision.updatedInput as Record<string, unknown>)
-                : null;
-            const text =
-              typeof decision?.updatedInput === 'string'
-                ? decision.updatedInput
-                : typeof updatedInput?.text === 'string'
-                  ? updatedInput.text
-                  : '';
-
-            sendMessage({
-              type: 'codex-command-stdin-response',
-              requestId,
-              text,
-            });
-            return;
-          }
-
-          sendMessage({
-            type: 'codex-approval-response',
-            requestId,
-            allow: Boolean(decision?.allow),
-            rememberEntry: decision?.rememberEntry,
-          });
+        if (!request) {
           return;
         }
 
-        sendMessage({
-          type: 'claude-permission-response',
-          requestId,
-          allow: Boolean(decision?.allow),
-          updatedInput: decision?.updatedInput,
-          message: decision?.message,
-          rememberEntry: decision?.rememberEntry,
+        const payload = buildInteractiveResponseMessage(request, decision);
+        if (!payload) {
+          return;
+        }
+
+        const didSend = sendMessage(payload);
+        requestLookup.set(requestId, {
+          ...request,
+          deliveryState: didSend ? 'submitting' : 'failed',
         });
       });
 
       setPendingPermissionRequests((previous) => {
-        const next = previous.filter((request) => !validIds.includes(request.requestId));
-        if (next.length === 0) {
-          setClaudeStatus(null);
-        }
-        return next;
+        const sendResults = new Map(
+          validIds.map((requestId) => {
+            const request = requestLookup.get(requestId);
+            return [requestId, request?.deliveryState === 'submitting'];
+          }),
+        );
+        return applyInteractiveRequestDispatchResults(previous, sendResults);
       });
     },
-    [pendingPermissionRequests, sendMessage, setClaudeStatus, setPendingPermissionRequests],
+    [pendingPermissionRequests, sendMessage, setPendingPermissionRequests],
   );
 
   const [isInputFocused, setIsInputFocused] = useState(false);

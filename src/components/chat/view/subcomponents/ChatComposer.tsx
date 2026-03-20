@@ -43,6 +43,7 @@ interface ChatComposerProps {
   handleGrantToolPermission: (suggestion: { entry: string; toolName: string }) => { success: boolean };
   claudeStatus: { text: string; tokens: number; can_interrupt: boolean } | null;
   isLoading: boolean;
+  canAbortSession: boolean;
   onAbortSession: () => void;
   provider: Provider | string;
   permissionMode: PermissionMode | string;
@@ -106,6 +107,7 @@ export default function ChatComposer({
   handleGrantToolPermission,
   claudeStatus,
   isLoading,
+  canAbortSession,
   onAbortSession,
   provider,
   permissionMode,
@@ -179,6 +181,8 @@ export default function ChatComposer({
   const mobileFloatingClass = isInputFocused
     ? 'max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:z-50 max-sm:bg-background max-sm:shadow-[0_-4px_20px_rgba(0,0,0,0.15)]'
     : '';
+  const showAbortButton = isLoading && canAbortSession;
+  const showPendingAbortState = isLoading && !canAbortSession;
 
   return (
     <div className={`relative flex-shrink-0 p-2 pb-2 sm:p-4 sm:pb-4 md:p-4 md:pb-6 ${mobileFloatingClass}`}>
@@ -347,7 +351,7 @@ export default function ChatComposer({
               <MicButton onTranscript={onTranscript} className="h-10 w-10 sm:h-10 sm:w-10" />
             </div>
 
-            {isLoading ? (
+            {showAbortButton ? (
               <button
                 type="button"
                 onClick={(e) => {
@@ -365,6 +369,24 @@ export default function ChatComposer({
                   </svg>
                   <svg className="z-10 h-3.5 w-3.5 text-background sm:h-4 sm:w-4" fill="currentColor" viewBox="0 0 24 24">
                     <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                </div>
+              </button>
+            ) : showPendingAbortState ? (
+              <button
+                type="button"
+                disabled
+                className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 transform items-center justify-center rounded-xl bg-foreground text-background opacity-80 sm:h-11 sm:w-11"
+                aria-label={t('claudeStatus.controls.startingGeneration', { defaultValue: 'Starting generation' })}
+                title={t('claudeStatus.controls.startingGeneration', { defaultValue: 'Starting generation' })}
+              >
+                <div className="relative flex items-center justify-center">
+                  <svg className="absolute h-6 w-6 animate-spin text-background/30" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <svg className="z-10 h-3.5 w-3.5 text-background/80 sm:h-4 sm:w-4" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="5" />
                   </svg>
                 </div>
               </button>
@@ -389,15 +411,9 @@ export default function ChatComposer({
                 <button
                   type="submit"
                   disabled={(!input.trim() && attachedImages.length === 0) || pendingPermissionRequests.length > 0}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    onSubmit(event);
-                  }}
-                  onTouchStart={(event) => {
-                    event.preventDefault();
-                    onSubmit(event);
-                  }}
                   className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary transition-all duration-200 hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-1 focus:ring-offset-background disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground sm:h-11 sm:w-11"
+                  aria-label={t('input.sendMessage', { defaultValue: 'Send message' })}
+                  title={t('input.sendMessage', { defaultValue: 'Send message' })}
                 >
                   <svg className="h-4 w-4 rotate-90 transform text-primary-foreground sm:h-[18px] sm:w-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

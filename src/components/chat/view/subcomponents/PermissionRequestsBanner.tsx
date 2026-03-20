@@ -35,6 +35,8 @@ export default function PermissionRequestsBanner({
   return (
     <div className="mb-3 space-y-3">
       {pendingPermissionRequests.map((request) => {
+        const isSubmitting = request.deliveryState === 'submitting';
+        const deliveryError = request.deliveryState === 'failed' ? request.deliveryError : null;
         const CustomPanel = getPermissionPanel(request.toolName);
         if (CustomPanel) {
           return (
@@ -113,9 +115,20 @@ export default function PermissionRequestsBanner({
 
               {/* Actions */}
               <div className="mt-2 ml-8 flex flex-wrap gap-2">
+                {deliveryError ? (
+                  <div className="w-full text-xs font-medium text-red-600 dark:text-red-400">
+                    {deliveryError}
+                  </div>
+                ) : null}
+                {isSubmitting ? (
+                  <div className="w-full text-xs font-medium text-amber-700 dark:text-amber-300">
+                    {t('permissions.submitting', { defaultValue: '正在提交您的决定...' })}
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => handlePermissionDecision(request.requestId, { allow: true })}
+                  disabled={isSubmitting}
                   className="inline-flex min-w-[100px] items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500/30 active:scale-95"
                 >
                   {t('permissions.allowOnceButton', { defaultValue: '允许单次' })}
@@ -129,12 +142,12 @@ export default function PermissionRequestsBanner({
                     }
                     handlePermissionDecision(matchingRequestIds, { allow: true, rememberEntry: permissionEntry });
                   }}
+                  disabled={isSubmitting || !canRemember}
                   className={`inline-flex min-w-[100px] items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-background/50 px-4 py-2 text-xs font-bold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/20 active:scale-95 ${
-                    canRemember
+                    canRemember && !isSubmitting
                       ? 'text-amber-700 hover:bg-amber-500/10 dark:text-amber-300'
                       : 'cursor-not-allowed opacity-50 dark:opacity-40 text-amber-900 dark:text-amber-100'
                   }`}
-                  disabled={!canRemember}
                 >
                   {isCodexApproval 
                     ? t('permissions.allowSessionButton', { defaultValue: '本会话允许' }) 
@@ -146,6 +159,7 @@ export default function PermissionRequestsBanner({
                 <button
                   type="button"
                   onClick={() => handlePermissionDecision(request.requestId, { allow: false, message: 'User denied tool use' })}
+                  disabled={isSubmitting}
                   className="inline-flex min-w-[80px] items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-background/50 px-4 py-2 text-xs font-bold text-red-600 shadow-sm transition-all hover:bg-red-500/10 focus:outline-none focus:ring-2 focus:ring-red-500/30 active:scale-95 dark:text-red-400"
                 >
                   {t('permissions.denyButton', { defaultValue: '拒绝' })}

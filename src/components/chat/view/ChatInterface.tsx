@@ -34,6 +34,8 @@ const CHAT_REALTIME_MESSAGE_TYPES = new Set([
   'codex-user-input-request',
   'codex-command-stdin-request',
   'codex-request-cancelled',
+  'codex-interactive-response-ack',
+  'codex-interactive-response-error',
   'codex-complete',
   'codex-error',
   'gemini-response',
@@ -122,6 +124,18 @@ function ChatInterface({
   } = useChatProviderState({
     selectedSession,
   });
+
+  const requestPendingPermissions = useCallback(() => {
+    if (!selectedSession?.id) {
+      return;
+    }
+
+    sendMessage({
+      type: 'get-pending-permissions',
+      sessionId: selectedSession.id,
+      provider: selectedSession.__provider || provider,
+    });
+  }, [provider, selectedSession, sendMessage]);
 
   const {
     chatMessages,
@@ -267,7 +281,16 @@ function ChatInterface({
     // set it back to true. If it died, this clears the permanent frozen state.
     setIsLoading(false);
     setCanAbortSession(false);
-  }, [selectedProject, selectedSession, loadSessionMessages, setChatMessages, setIsLoading, setCanAbortSession]);
+    requestPendingPermissions();
+  }, [
+    selectedProject,
+    selectedSession,
+    loadSessionMessages,
+    setChatMessages,
+    setIsLoading,
+    setCanAbortSession,
+    requestPendingPermissions,
+  ]);
 
   useChatRealtimeHandlers({
     latestMessage,
@@ -300,12 +323,8 @@ function ChatInterface({
       return;
     }
 
-    sendMessage({
-      type: 'get-pending-permissions',
-      sessionId: selectedSession.id,
-      provider: selectedSession.__provider || provider,
-    });
-  }, [provider, selectedSession?.__provider, selectedSession?.id, sendMessage, ws]);
+    requestPendingPermissions();
+  }, [requestPendingPermissions, selectedSession?.id, ws]);
 
   useEffect(() => {
     if (!isLoading || !canAbortSession) {
@@ -414,6 +433,7 @@ function ChatInterface({
           handleGrantToolPermission={handleGrantToolPermission}
           claudeStatus={claudeStatus}
           isLoading={isLoading}
+          canAbortSession={canAbortSession}
           onAbortSession={handleAbortSession}
           provider={provider}
           permissionMode={permissionMode}

@@ -1,47 +1,21 @@
 import express from 'express';
-import { spawn } from 'child_process';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { extractProjectDirectory } from '../projects.js';
 import { queryClaudeSDK } from '../claude-sdk.js';
+import { runCommand } from '../utils/process-runner.js';
 
 const router = express.Router();
 const COMMIT_DIFF_CHARACTER_LIMIT = 500_000;
+const DEFAULT_GIT_TIMEOUT_MS = 60_000;
 
 function spawnAsync(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      ...options,
-      shell: false,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-        return;
-      }
-
-      const error = new Error(`Command failed: ${command} ${args.join(' ')}`);
-      error.code = code;
-      error.stdout = stdout;
-      error.stderr = stderr;
-      reject(error);
-    });
+  return runCommand(command, args, {
+    ...options,
+    shell: false,
+    timeoutMs: options.timeoutMs || DEFAULT_GIT_TIMEOUT_MS,
+    maxStdoutBytes: options.maxStdoutBytes || (COMMIT_DIFF_CHARACTER_LIMIT + 64 * 1024),
+    maxStderrBytes: options.maxStderrBytes || (128 * 1024),
   });
 }
 
@@ -428,7 +402,7 @@ router.get('/diff', async (req, res) => {
     res.json({ diff });
   } catch (error) {
     console.error('Git diff error:', error);
-    res.json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -508,7 +482,7 @@ router.get('/file-with-diff', async (req, res) => {
     });
   } catch (error) {
     console.error('Git file-with-diff error:', error);
-    res.json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -674,7 +648,7 @@ router.get('/branches', async (req, res) => {
     res.json({ branches, localBranches, remoteBranches });
   } catch (error) {
     console.error('Git branches error:', error);
-    res.json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -801,7 +775,7 @@ router.get('/commits', async (req, res) => {
     res.json({ commits });
   } catch (error) {
     console.error('Git commits error:', error);
-    res.json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -833,7 +807,7 @@ router.get('/commit-diff', async (req, res) => {
     res.json({ diff, isTruncated });
   } catch (error) {
     console.error('Git commit diff error:', error);
-    res.json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1104,7 +1078,7 @@ router.get('/remote-status', async (req, res) => {
     });
   } catch (error) {
     console.error('Git remote status error:', error);
-    res.json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -2,114 +2,35 @@ import express from 'express';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { spawn } from 'child_process';
+import { createRequestAbortController, runCommand } from '../utils/process-runner.js';
 
 const router = express.Router();
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-function runChildProcess(args, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS, res) {
-  const proc = spawn(args[0], args.slice(1), options);
-
-  let stdout = '';
-  let stderr = '';
-  let settled = false;
-
-  const markSettled = () => { if (!settled) { settled = true; } };
-
-  const cleanup = () => {
-    markSettled();
-    proc.stdout?.removeAllListeners('data');
-    proc.stderr?.removeAllListeners('data');
-    proc.removeAllListeners('close');
-    proc.removeAllListeners('error');
-    clearTimeout(timer);
-    reqCleanup();
-  };
-
-  const reqCleanup = () => {
-    if (!proc.killed) proc.kill();
-  };
-
-  const timer = setTimeout(() => {
-    if (!settled) {
+async function runChildProcessWithTransform(args, options, timeoutMs, req, res, onSuccess) {
+  const requestAbort = createRequestAbortController(req, res);
+  try {
+    const result = await runCommand(args[0], args.slice(1), {
+      ...options,
+      timeoutMs,
+      maxStdoutBytes: 256 * 1024,
+      maxStderrBytes: 256 * 1024,
+      signal: requestAbort.signal,
+    });
+    onSuccess(result.stdout);
+  } catch (error) {
+    if (requestAbort.signal.aborted || res.headersSent) {
+      return;
+    }
+    if (error.code === 'ETIMEDOUT') {
       console.warn(`[MCP] Process timed out after ${timeoutMs}ms: ${args.join(' ')}`);
       res.status(504).json({ error: 'Command timed out', details: `Process exceeded ${timeoutMs / 1000}s limit` });
-      cleanup();
+      return;
     }
-  }, timeoutMs);
-
-  proc.stdout?.on('data', (data) => { stdout += data.toString(); });
-  proc.stderr?.on('data', (data) => { stderr += data.toString(); });
-
-  proc.on('close', (code) => {
-    if (settled) return;
-    cleanup();
-    if (code === 0) {
-      res.json({ success: true, output: stdout });
-    } else {
-      res.status(500).json({ error: 'CLI command failed', details: stderr || `Exited with code ${code}` });
-    }
-  });
-
-  proc.on('error', (error) => {
-    if (settled) return;
-    cleanup();
-    res.status(500).json({ error: 'Failed to run CLI', details: error.message });
-  });
-
-  return reqCleanup;
-}
-
-function runChildProcessWithTransform(args, options, timeoutMs, res, onSuccess) {
-  const proc = spawn(args[0], args.slice(1), options);
-
-  let stdout = '';
-  let stderr = '';
-  let settled = false;
-
-  const cleanup = () => {
-    if (!settled) {
-      settled = true;
-      proc.stdout?.removeAllListeners('data');
-      proc.stderr?.removeAllListeners('data');
-      proc.removeAllListeners('close');
-      proc.removeAllListeners('error');
-      clearTimeout(timer);
-      if (!proc.killed) proc.kill();
-    }
-  };
-
-  const timer = setTimeout(() => {
-    if (!settled) {
-      console.warn(`[MCP] Process timed out after ${timeoutMs}ms: ${args.join(' ')}`);
-      res.status(504).json({ error: 'Command timed out', details: `Process exceeded ${timeoutMs / 1000}s limit` });
-      cleanup();
-    }
-  }, timeoutMs);
-
-  proc.stdout?.on('data', (data) => { stdout += data.toString(); });
-  proc.stderr?.on('data', (data) => { stderr += data.toString(); });
-
-  proc.on('close', (code) => {
-    if (settled) return;
-    cleanup();
-    if (code === 0) {
-      onSuccess(stdout);
-    } else {
-      res.status(500).json({ error: 'CLI command failed', details: stderr || `Exited with code ${code}` });
-    }
-  });
-
-  proc.on('error', (error) => {
-    if (settled) return;
-    cleanup();
-    res.status(500).json({ error: 'Failed to run CLI', details: error.message });
-  });
+    res.status(500).json({ error: 'CLI command failed', details: error.stderr || error.message });
+  } finally {
+    requestAbort.cleanup();
+  }
 }
 
 // Claude CLI command routes
@@ -118,14 +39,14 @@ function runChildProcessWithTransform(args, options, timeoutMs, res, onSuccess) 
 router.get('/cli/list', async (req, res) => {
   try {
     console.log('📋 Listing MCP servers using Claude CLI');
-    runChildProcessWithTransform(
+    await runChildProcessWithTransform(
       ['claude', 'mcp', 'list'],
       { stdio: ['pipe', 'pipe', 'pipe'] },
       DEFAULT_TIMEOUT_MS,
+      req,
       res,
       (stdout) => res.json({ success: true, output: stdout, servers: parseClaudeListOutput(stdout) })
     );
-    req.on('close', () => {});
   } catch (error) {
     console.error('Error listing MCP servers via CLI:', error);
     res.status(500).json({ error: 'Failed to list MCP servers', details: error.message });
@@ -172,10 +93,11 @@ router.post('/cli/add', async (req, res) => {
       console.log('📁 Running in project directory:', projectPath);
     }
 
-    runChildProcessWithTransform(
+    await runChildProcessWithTransform(
       ['claude', ...cliArgs],
       spawnOpts,
       DEFAULT_TIMEOUT_MS,
+      req,
       res,
       (stdout) => res.json({ success: true, output: stdout, message: `MCP server "${name}" added successfully` })
     );
@@ -219,10 +141,11 @@ router.post('/cli/add-json', async (req, res) => {
       spawnOpts.cwd = projectPath;
     }
 
-    runChildProcessWithTransform(
+    await runChildProcessWithTransform(
       ['claude', ...cliArgs],
       spawnOpts,
       DEFAULT_TIMEOUT_MS,
+      req,
       res,
       (stdout) => res.json({ success: true, output: stdout, message: `MCP server "${name}" added successfully via JSON` })
     );
@@ -261,10 +184,11 @@ router.delete('/cli/remove/:name', async (req, res) => {
 
     console.log('🔧 Running Claude CLI command: claude', cliArgs.join(' '));
 
-    runChildProcessWithTransform(
+    await runChildProcessWithTransform(
       ['claude', ...cliArgs],
       { stdio: ['pipe', 'pipe', 'pipe'] },
       DEFAULT_TIMEOUT_MS,
+      req,
       res,
       (stdout) => res.json({ success: true, output: stdout, message: `MCP server "${name}" removed successfully` })
     );
@@ -280,10 +204,11 @@ router.get('/cli/get/:name', async (req, res) => {
     const { name } = req.params;
     console.log('📄 Getting MCP server details using Claude CLI:', name);
 
-    runChildProcessWithTransform(
+    await runChildProcessWithTransform(
       ['claude', 'mcp', 'get', name],
       { stdio: ['pipe', 'pipe', 'pipe'] },
       DEFAULT_TIMEOUT_MS,
+      req,
       res,
       (stdout) => res.json({ success: true, output: stdout, server: parseClaudeGetOutput(stdout) })
     );

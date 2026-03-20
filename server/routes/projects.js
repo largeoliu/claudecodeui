@@ -1,8 +1,8 @@
 import express from 'express';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
 import { addProjectManually } from '../projects.js';
+import { createRequestAbortController, runCommand, startManagedProcess } from '../utils/process-runner.js';
 
 const router = express.Router();
 
@@ -282,8 +282,6 @@ router.post('/create-workspace', async (req, res) => {
           // Fetch token from database
           const token = await getGithubTokenById(githubTokenId, req.user.id);
           if (!token) {
-            // Clean up created directory
-            await fs.rm(absolutePath, { recursive: true, force: true });
             return res.status(404).json({ error: 'GitHub token not found' });
           }
           githubToken = token.github_token;
@@ -379,6 +377,8 @@ async function getGithubTokenById(tokenId, userId) {
  */
 router.get('/clone-progress', async (req, res) => {
   const { path: workspacePath, githubUrl, githubTokenId, newGithubToken } = req.query;
+  const requestAbort = createRequestAbortController(req, res);
+  let closed = false;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -386,7 +386,21 @@ router.get('/clone-progress', async (req, res) => {
   res.flushHeaders();
 
   const sendEvent = (type, data) => {
+    if (closed || res.writableEnded) {
+      return;
+    }
     res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+  };
+
+  const closeStream = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    requestAbort.cleanup();
+    if (!res.writableEnded) {
+      res.end();
+    }
   };
 
   try {
@@ -411,7 +425,6 @@ router.get('/clone-progress', async (req, res) => {
     if (githubTokenId) {
       const token = await getGithubTokenById(parseInt(githubTokenId), req.user.id);
       if (!token) {
-        await fs.rm(absolutePath, { recursive: true, force: true });
         sendEvent('error', { message: 'GitHub token not found' });
         res.end();
         return;
@@ -449,24 +462,27 @@ router.get('/clone-progress', async (req, res) => {
 
     sendEvent('progress', { message: `Cloning into '${repoName}'...` });
 
-    const gitProcess = spawn('git', ['clone', '--progress', cloneUrl, clonePath], {
+    const managed = startManagedProcess('git', ['clone', '--progress', cloneUrl, clonePath], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
-        ...process.env,
         GIT_TERMINAL_PROMPT: '0'
-      }
+      },
+      timeoutMs: 5 * 60_000,
+      maxStdoutBytes: 256 * 1024,
+      maxStderrBytes: 256 * 1024,
+      signal: requestAbort.signal,
     });
 
     let lastError = '';
 
-    gitProcess.stdout.on('data', (data) => {
+    managed.child.stdout.on('data', (data) => {
       const message = data.toString().trim();
       if (message) {
         sendEvent('progress', { message });
       }
     });
 
-    gitProcess.stderr.on('data', (data) => {
+    managed.child.stderr.on('data', (data) => {
       const message = data.toString().trim();
       lastError = message;
       if (message) {
@@ -474,8 +490,23 @@ router.get('/clone-progress', async (req, res) => {
       }
     });
 
-    gitProcess.on('close', async (code) => {
-      if (code === 0) {
+    managed.wait.then(async (result) => {
+      if (result.aborted) {
+        return;
+      }
+
+      if (result.timedOut) {
+        sendEvent('error', { message: 'Git clone timed out' });
+        try {
+          await fs.rm(clonePath, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors after timeout.
+        }
+        closeStream();
+        return;
+      }
+
+      if (result.code === 0) {
         try {
           const project = await addProjectManually(clonePath);
           sendEvent('complete', { project, message: 'Repository cloned successfully' });
@@ -501,93 +532,75 @@ router.get('/clone-progress', async (req, res) => {
         }
         sendEvent('error', { message: errorMessage });
       }
-      res.end();
-    });
-
-    gitProcess.on('error', (error) => {
+      closeStream();
+    }).catch((error) => {
+      if (requestAbort.signal.aborted) {
+        return;
+      }
       if (error.code === 'ENOENT') {
         sendEvent('error', { message: 'Git is not installed or not in PATH' });
       } else {
         sendEvent('error', { message: error.message });
       }
-      res.end();
+      closeStream();
     });
 
     req.on('close', () => {
-      gitProcess.kill();
+      managed.kill();
+      closeStream();
     });
 
   } catch (error) {
     sendEvent('error', { message: error.message });
-    res.end();
+    closeStream();
   }
 });
 
 /**
  * Helper function to clone a GitHub repository
  */
-function cloneGitHubRepository(githubUrl, destinationPath, githubToken = null) {
-  return new Promise((resolve, reject) => {
-    let cloneUrl = githubUrl;
+async function cloneGitHubRepository(githubUrl, destinationPath, githubToken = null) {
+  let cloneUrl = githubUrl;
 
-    if (githubToken) {
-      try {
-        const url = new URL(githubUrl);
-        url.username = githubToken;
-        url.password = '';
-        cloneUrl = url.toString();
-      } catch (error) {
-        // SSH URL - use as-is
-      }
+  if (githubToken) {
+    try {
+      const url = new URL(githubUrl);
+      url.username = githubToken;
+      url.password = '';
+      cloneUrl = url.toString();
+    } catch (error) {
+      // SSH URL - use as-is
     }
+  }
 
-    const gitProcess = spawn('git', ['clone', '--progress', cloneUrl, destinationPath], {
+  try {
+    return await runCommand('git', ['clone', '--progress', cloneUrl, destinationPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
-        ...process.env,
         GIT_TERMINAL_PROMPT: '0'
-      }
+      },
+      timeoutMs: 5 * 60_000,
+      maxStdoutBytes: 256 * 1024,
+      maxStderrBytes: 256 * 1024,
     });
+  } catch (error) {
+    const stderr = error.stderr || '';
+    let errorMessage = 'Git clone failed';
 
-    let stdout = '';
-    let stderr = '';
+    if (error.code === 'ENOENT') {
+      errorMessage = 'Git is not installed or not in PATH';
+    } else if (stderr.includes('Authentication failed') || stderr.includes('could not read Username')) {
+      errorMessage = 'Authentication failed. Please check your GitHub token.';
+    } else if (stderr.includes('Repository not found')) {
+      errorMessage = 'Repository not found. Please check the URL and ensure you have access.';
+    } else if (stderr.includes('already exists')) {
+      errorMessage = 'Directory already exists';
+    } else if (stderr) {
+      errorMessage = stderr;
+    }
 
-    gitProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    gitProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    gitProcess.on('close', (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        let errorMessage = 'Git clone failed';
-
-        if (stderr.includes('Authentication failed') || stderr.includes('could not read Username')) {
-          errorMessage = 'Authentication failed. Please check your GitHub token.';
-        } else if (stderr.includes('Repository not found')) {
-          errorMessage = 'Repository not found. Please check the URL and ensure you have access.';
-        } else if (stderr.includes('already exists')) {
-          errorMessage = 'Directory already exists';
-        } else if (stderr) {
-          errorMessage = stderr;
-        }
-
-        reject(new Error(errorMessage));
-      }
-    });
-
-    gitProcess.on('error', (error) => {
-      if (error.code === 'ENOENT') {
-        reject(new Error('Git is not installed or not in PATH'));
-      } else {
-        reject(error);
-      }
-    });
-  });
+    throw new Error(errorMessage);
+  }
 }
 
 export default router;

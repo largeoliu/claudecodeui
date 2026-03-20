@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawn } from 'child_process';
+import { runCommand } from './process-runner.js';
 
 const PLUGINS_DIR = path.join(os.homedir(), '.claude-code-ui', 'plugins');
 const PLUGINS_CONFIG_PATH = path.join(os.homedir(), '.claude-code-ui', 'plugins.json');
@@ -244,18 +244,12 @@ export function installPluginFromGit(url) {
       resolve(manifest);
     };
 
-    const gitProcess = spawn('git', ['clone', '--depth', '1', '--', url, tempDir], {
+    runCommand('git', ['clone', '--depth', '1', '--', url, tempDir], {
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stderr = '';
-    gitProcess.stderr.on('data', (data) => { stderr += data.toString(); });
-
-    gitProcess.on('close', (code) => {
-      if (code !== 0) {
-        cleanupTemp();
-        return reject(new Error(`git clone failed (exit code ${code}): ${stderr.trim()}`));
-      }
+      timeoutMs: 5 * 60_000,
+      maxStdoutBytes: 256 * 1024,
+      maxStderrBytes: 256 * 1024,
+    }).then(() => {
 
       // Validate manifest exists
       const manifestPath = path.join(tempDir, 'manifest.json');
@@ -289,31 +283,24 @@ export function installPluginFromGit(url) {
       // --ignore-scripts prevents postinstall hooks from executing arbitrary code.
       const packageJsonPath = path.join(tempDir, 'package.json');
       if (fs.existsSync(packageJsonPath)) {
-        const npmProcess = spawn('npm', ['install', '--production', '--ignore-scripts'], {
+        runCommand('npm', ['install', '--production', '--ignore-scripts'], {
           cwd: tempDir,
           stdio: ['ignore', 'pipe', 'pipe'],
-        });
-
-        npmProcess.on('close', (npmCode) => {
-          if (npmCode !== 0) {
-            cleanupTemp();
-            return reject(new Error(`npm install for ${repoName} failed (exit code ${npmCode})`));
-          }
+          timeoutMs: 5 * 60_000,
+          maxStdoutBytes: 256 * 1024,
+          maxStderrBytes: 256 * 1024,
+        }).then(() => {
           finalize(manifest);
-        });
-
-        npmProcess.on('error', (err) => {
+        }).catch((err) => {
           cleanupTemp();
-          reject(err);
+          reject(new Error(`npm install for ${repoName} failed: ${err.stderr || err.message}`));
         });
       } else {
         finalize(manifest);
       }
-    });
-
-    gitProcess.on('error', (err) => {
+    }).catch((err) => {
       cleanupTemp();
-      reject(new Error(`Failed to spawn git: ${err.message}`));
+      reject(new Error(`git clone failed: ${err.stderr || err.message}`));
     });
   });
 }
@@ -326,18 +313,13 @@ export function updatePluginFromGit(name) {
     }
 
     // Only fast-forward to avoid silent divergence
-    const gitProcess = spawn('git', ['pull', '--ff-only', '--'], {
+    runCommand('git', ['pull', '--ff-only', '--'], {
       cwd: pluginDir,
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stderr = '';
-    gitProcess.stderr.on('data', (data) => { stderr += data.toString(); });
-
-    gitProcess.on('close', (code) => {
-      if (code !== 0) {
-        return reject(new Error(`git pull failed (exit code ${code}): ${stderr.trim()}`));
-      }
+      timeoutMs: 5 * 60_000,
+      maxStdoutBytes: 256 * 1024,
+      maxStderrBytes: 256 * 1024,
+    }).then(() => {
 
       // Re-validate manifest after update
       const manifestPath = path.join(pluginDir, 'manifest.json');
@@ -356,24 +338,20 @@ export function updatePluginFromGit(name) {
       // Re-run npm install if package.json exists
       const packageJsonPath = path.join(pluginDir, 'package.json');
       if (fs.existsSync(packageJsonPath)) {
-        const npmProcess = spawn('npm', ['install', '--production', '--ignore-scripts'], {
+        runCommand('npm', ['install', '--production', '--ignore-scripts'], {
           cwd: pluginDir,
           stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        npmProcess.on('close', (npmCode) => {
-          if (npmCode !== 0) {
-            return reject(new Error(`npm install for ${name} failed (exit code ${npmCode})`));
-          }
+          timeoutMs: 5 * 60_000,
+          maxStdoutBytes: 256 * 1024,
+          maxStderrBytes: 256 * 1024,
+        }).then(() => {
           resolve(manifest);
-        });
-        npmProcess.on('error', (err) => reject(err));
+        }).catch((err) => reject(new Error(`npm install for ${name} failed: ${err.stderr || err.message}`)));
       } else {
         resolve(manifest);
       }
-    });
-
-    gitProcess.on('error', (err) => {
-      reject(new Error(`Failed to spawn git: ${err.message}`));
+    }).catch((err) => {
+      reject(new Error(`git pull failed: ${err.stderr || err.message}`));
     });
   });
 }

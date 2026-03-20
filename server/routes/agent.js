@@ -1,17 +1,17 @@
 import express from 'express';
-import { spawn } from 'child_process';
 import path from 'path';
 import os from 'os';
 import { promises as fs } from 'fs';
 import crypto from 'crypto';
 import { userDb, apiKeysDb, githubTokensDb } from '../database/db.js';
 import { addProjectManually } from '../projects.js';
-import { queryClaudeSDK } from '../claude-sdk.js';
-import { queryCodex } from '../openai-codex.js';
-import { spawnGemini } from '../gemini-cli.js';
+import { abortClaudeSDKSession, queryClaudeSDK } from '../claude-sdk.js';
+import { abortCodexSession, queryCodex } from '../openai-codex.js';
+import { abortGeminiSession, spawnGemini } from '../gemini-cli.js';
 import { Octokit } from '@octokit/rest';
 import { CLAUDE_MODELS, CODEX_MODELS } from '../../shared/modelConstants.js';
 import { IS_PLATFORM } from '../constants/config.js';
+import { createRequestAbortController, runCommand } from '../utils/process-runner.js';
 
 const router = express.Router();
 
@@ -65,36 +65,17 @@ const validateExternalApiKey = (req, res, next) => {
  * @param {string} repoPath - Path to the git repository
  * @returns {Promise<string>} - Remote URL of the repository
  */
-async function getGitRemoteUrl(repoPath) {
-  return new Promise((resolve, reject) => {
-    const gitProcess = spawn('git', ['config', '--get', 'remote.origin.url'], {
-      cwd: repoPath,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    gitProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    gitProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    gitProcess.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(`Failed to get git remote: ${stderr}`));
-      }
-    });
-
-    gitProcess.on('error', (error) => {
-      reject(new Error(`Failed to execute git: ${error.message}`));
-    });
+async function getGitRemoteUrl(repoPath, signal = null) {
+  const result = await runCommand('git', ['config', '--get', 'remote.origin.url'], {
+    cwd: repoPath,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeoutMs: 30_000,
+    maxStdoutBytes: 32 * 1024,
+    maxStderrBytes: 32 * 1024,
+    signal,
   });
+
+  return result.stdout.trim();
 }
 
 /**
@@ -223,37 +204,17 @@ function validateBranchName(branchName) {
  * @param {number} limit - Number of commits to retrieve (default: 5)
  * @returns {Promise<string[]>} - Array of commit messages
  */
-async function getCommitMessages(projectPath, limit = 5) {
-  return new Promise((resolve, reject) => {
-    const gitProcess = spawn('git', ['log', `-${limit}`, '--pretty=format:%s'], {
-      cwd: projectPath,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    gitProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    gitProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    gitProcess.on('close', (code) => {
-      if (code === 0) {
-        const messages = stdout.trim().split('\n').filter(msg => msg.length > 0);
-        resolve(messages);
-      } else {
-        reject(new Error(`Failed to get commit messages: ${stderr}`));
-      }
-    });
-
-    gitProcess.on('error', (error) => {
-      reject(new Error(`Failed to execute git: ${error.message}`));
-    });
+async function getCommitMessages(projectPath, limit = 5, signal = null) {
+  const result = await runCommand('git', ['log', `-${limit}`, '--pretty=format:%s'], {
+    cwd: projectPath,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeoutMs: 30_000,
+    maxStdoutBytes: 64 * 1024,
+    maxStderrBytes: 32 * 1024,
+    signal,
   });
+
+  return result.stdout.trim().split('\n').filter(msg => msg.length > 0);
 }
 
 /**
@@ -330,86 +291,61 @@ async function createGitHubPR(octokit, owner, repo, branchName, title, body, bas
  * @param {string} projectPath - Path for cloning the repository
  * @returns {Promise<string>} - Path to the cloned repository
  */
-async function cloneGitHubRepo(githubUrl, githubToken = null, projectPath) {
-  return new Promise(async (resolve, reject) => {
+async function cloneGitHubRepo(githubUrl, githubToken = null, projectPath, signal = null) {
+  // Validate GitHub URL
+  if (!githubUrl || !githubUrl.includes('github.com')) {
+    throw new Error('Invalid GitHub URL');
+  }
+
+  const cloneDir = path.resolve(projectPath);
+
+  // Check if directory already exists
+  try {
+    await fs.access(cloneDir);
+    // Directory exists - check if it's a git repo with the same URL
     try {
-      // Validate GitHub URL
-      if (!githubUrl || !githubUrl.includes('github.com')) {
-        throw new Error('Invalid GitHub URL');
+      const existingUrl = await getGitRemoteUrl(cloneDir, signal);
+      const normalizedExisting = normalizeGitHubUrl(existingUrl);
+      const normalizedRequested = normalizeGitHubUrl(githubUrl);
+
+      if (normalizedExisting === normalizedRequested) {
+        console.log('✅ Repository already exists at path with correct URL');
+        return cloneDir;
       }
-
-      const cloneDir = path.resolve(projectPath);
-
-      // Check if directory already exists
-      try {
-        await fs.access(cloneDir);
-        // Directory exists - check if it's a git repo with the same URL
-        try {
-          const existingUrl = await getGitRemoteUrl(cloneDir);
-          const normalizedExisting = normalizeGitHubUrl(existingUrl);
-          const normalizedRequested = normalizeGitHubUrl(githubUrl);
-
-          if (normalizedExisting === normalizedRequested) {
-            console.log('✅ Repository already exists at path with correct URL');
-            return resolve(cloneDir);
-          } else {
-            throw new Error(`Directory ${cloneDir} already exists with a different repository (${existingUrl}). Expected: ${githubUrl}`);
-          }
-        } catch (gitError) {
-          throw new Error(`Directory ${cloneDir} already exists but is not a valid git repository or git command failed`);
-        }
-      } catch (accessError) {
-        // Directory doesn't exist - proceed with clone
-      }
-
-      // Ensure parent directory exists
-      await fs.mkdir(path.dirname(cloneDir), { recursive: true });
-
-      // Prepare the git clone URL with authentication if token is provided
-      let cloneUrl = githubUrl;
-      if (githubToken) {
-        // Convert HTTPS URL to authenticated URL
-        // Example: https://github.com/user/repo -> https://token@github.com/user/repo
-        cloneUrl = githubUrl.replace('https://github.com', `https://${githubToken}@github.com`);
-      }
-
-      console.log('🔄 Cloning repository:', githubUrl);
-      console.log('📁 Destination:', cloneDir);
-
-      // Execute git clone
-      const gitProcess = spawn('git', ['clone', '--depth', '1', cloneUrl, cloneDir], {
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      gitProcess.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      gitProcess.stderr.on('data', (data) => {
-        stderr += data.toString();
-        console.log('Git stderr:', data.toString());
-      });
-
-      gitProcess.on('close', (code) => {
-        if (code === 0) {
-          console.log('✅ Repository cloned successfully');
-          resolve(cloneDir);
-        } else {
-          console.error('❌ Git clone failed:', stderr);
-          reject(new Error(`Git clone failed: ${stderr}`));
-        }
-      });
-
-      gitProcess.on('error', (error) => {
-        reject(new Error(`Failed to execute git: ${error.message}`));
-      });
-    } catch (error) {
-      reject(error);
+      throw new Error(`Directory ${cloneDir} already exists with a different repository (${existingUrl}). Expected: ${githubUrl}`);
+    } catch (gitError) {
+      throw new Error(`Directory ${cloneDir} already exists but is not a valid git repository or git command failed`);
     }
-  });
+  } catch (accessError) {
+    // Directory doesn't exist - proceed with clone
+  }
+
+  // Ensure parent directory exists
+  await fs.mkdir(path.dirname(cloneDir), { recursive: true });
+
+  // Prepare the git clone URL with authentication if token is provided
+  let cloneUrl = githubUrl;
+  if (githubToken) {
+    cloneUrl = githubUrl.replace('https://github.com', `https://${githubToken}@github.com`);
+  }
+
+  console.log('🔄 Cloning repository:', githubUrl);
+  console.log('📁 Destination:', cloneDir);
+
+  try {
+    await runCommand('git', ['clone', '--depth', '1', cloneUrl, cloneDir], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeoutMs: 5 * 60_000,
+      maxStdoutBytes: 256 * 1024,
+      maxStderrBytes: 256 * 1024,
+      signal,
+    });
+    console.log('✅ Repository cloned successfully');
+    return cloneDir;
+  } catch (error) {
+    console.error('❌ Git clone failed:', error.stderr || error.message);
+    throw new Error(`Git clone failed: ${error.stderr || error.message}`);
+  }
 }
 
 /**
@@ -454,6 +390,7 @@ class SSEStreamWriter {
     this.sessionId = null;
     this.userId = userId;
     this.isSSEStreamWriter = true;  // Marker for transport detection
+    this.heartbeatTimer = null;
   }
 
   send(data) {
@@ -466,9 +403,32 @@ class SSEStreamWriter {
   }
 
   end() {
+    this.stopHeartbeat();
     if (!this.res.writableEnded) {
       this.res.write('data: {"type":"done"}\n\n');
       this.res.end();
+    }
+  }
+
+  startHeartbeat(intervalMs = 15_000) {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.res.writableEnded) {
+        this.stopHeartbeat();
+        return;
+      }
+      this.res.write(': heartbeat\n\n');
+    }, intervalMs);
+
+    if (typeof this.heartbeatTimer.unref === 'function') {
+      this.heartbeatTimer.unref();
+    }
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
   }
 
@@ -835,6 +795,7 @@ class ResponseCollector {
  */
 router.post('/', validateExternalApiKey, async (req, res) => {
   const { githubUrl, projectPath, message, provider = 'claude', model, githubToken, branchName } = req.body;
+  const requestAbort = createRequestAbortController(req, res);
 
   // Parse stream and cleanup as booleans (handle string "true"/"false" from curl)
   const stream = req.body.stream === undefined ? true : (req.body.stream === true || req.body.stream === 'true');
@@ -865,6 +826,44 @@ router.post('/', validateExternalApiKey, async (req, res) => {
 
   let finalProjectPath = null;
   let writer = null;
+  let cleanupTimer = null;
+  let cancelTriggered = false;
+
+  const abortActiveProviderRun = async () => {
+    if (cancelTriggered) {
+      return;
+    }
+    cancelTriggered = true;
+
+    const activeSessionId = writer?.getSessionId?.();
+    if (!activeSessionId) {
+      return;
+    }
+
+    try {
+      if (provider === 'claude') {
+        await abortClaudeSDKSession(activeSessionId);
+      } else if (provider === 'codex') {
+        abortCodexSession(activeSessionId);
+      } else if (provider === 'gemini') {
+        abortGeminiSession(activeSessionId);
+      }
+    } catch (error) {
+      console.warn('Failed to abort active provider session:', error.message);
+    }
+  };
+
+  requestAbort.signal.addEventListener('abort', () => {
+    if (cleanupTimer) {
+      clearTimeout(cleanupTimer);
+      cleanupTimer = null;
+    }
+    writer?.stopHeartbeat?.();
+    void abortActiveProviderRun();
+    if (finalProjectPath && cleanup && githubUrl) {
+      void cleanupProject(finalProjectPath, writer?.getSessionId?.());
+    }
+  }, { once: true });
 
   try {
     // Determine the final project path
@@ -881,7 +880,7 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         targetPath = path.join(os.homedir(), '.claude', 'external-projects', repoHash);
       }
 
-      finalProjectPath = await cloneGitHubRepo(githubUrl.trim(), tokenToUse, targetPath);
+      finalProjectPath = await cloneGitHubRepo(githubUrl.trim(), tokenToUse, targetPath, requestAbort.signal);
     } else {
       // Use existing project path
       finalProjectPath = path.resolve(projectPath);
@@ -918,6 +917,7 @@ router.post('/', validateExternalApiKey, async (req, res) => {
       res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
 
       writer = new SSEStreamWriter(res, req.user.id);
+      writer.startHeartbeat();
 
       // Send initial status
       writer.send({
@@ -946,7 +946,8 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         cwd: finalProjectPath,
         sessionId: null, // New session
         model: model,
-        permissionMode: 'bypassPermissions' // Bypass all permissions for API calls
+        permissionMode: 'bypassPermissions', // Bypass all permissions for API calls
+        signal: requestAbort.signal,
       }, writer);
 
     } else if (provider === 'codex') {
@@ -976,7 +977,7 @@ router.post('/', validateExternalApiKey, async (req, res) => {
     let branchInfo = null;
     let prInfo = null;
 
-    if (createBranch || createPR) {
+    if (!requestAbort.signal.aborted && (createBranch || createPR)) {
       try {
         console.log('🔄 Starting GitHub branch/PR creation workflow...');
 
@@ -988,14 +989,14 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         }
 
         // Initialize Octokit
-        const octokit = new Octokit({ auth: tokenToUse });
+        const octokit = new Octokit({ auth: tokenToUse, request: { timeout: 30_000 } });
 
         // Get GitHub URL - either from parameter or from git remote
         let repoUrl = githubUrl;
         if (!repoUrl) {
           console.log('🔍 Getting GitHub URL from git remote...');
           try {
-            repoUrl = await getGitRemoteUrl(finalProjectPath);
+            repoUrl = await getGitRemoteUrl(finalProjectPath, requestAbort.signal);
             if (!repoUrl.includes('github.com')) {
               throw new Error('Project does not have a GitHub remote configured');
             }
@@ -1026,68 +1027,53 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         if (createBranch) {
           // Create and checkout the new branch locally
           console.log('🔄 Creating local branch...');
-          const checkoutProcess = spawn('git', ['checkout', '-b', finalBranchName], {
-            cwd: finalProjectPath,
-            stdio: 'pipe'
-          });
-
-          await new Promise((resolve, reject) => {
-            let stderr = '';
-            checkoutProcess.stderr.on('data', (data) => { stderr += data.toString(); });
-            checkoutProcess.on('close', (code) => {
-              if (code === 0) {
-                console.log(`✅ Created and checked out local branch '${finalBranchName}'`);
-                resolve();
-              } else {
-                // Branch might already exist locally, try to checkout
-                if (stderr.includes('already exists')) {
-                  console.log(`ℹ️ Branch '${finalBranchName}' already exists locally, checking out...`);
-                  const checkoutExisting = spawn('git', ['checkout', finalBranchName], {
-                    cwd: finalProjectPath,
-                    stdio: 'pipe'
-                  });
-                  checkoutExisting.on('close', (checkoutCode) => {
-                    if (checkoutCode === 0) {
-                      console.log(`✅ Checked out existing branch '${finalBranchName}'`);
-                      resolve();
-                    } else {
-                      reject(new Error(`Failed to checkout existing branch: ${stderr}`));
-                    }
-                  });
-                } else {
-                  reject(new Error(`Failed to create branch: ${stderr}`));
-                }
-              }
+          try {
+            await runCommand('git', ['checkout', '-b', finalBranchName], {
+              cwd: finalProjectPath,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              timeoutMs: 60_000,
+              maxStdoutBytes: 64 * 1024,
+              maxStderrBytes: 64 * 1024,
+              signal: requestAbort.signal,
             });
-          });
+            console.log(`✅ Created and checked out local branch '${finalBranchName}'`);
+          } catch (error) {
+            if ((error.stderr || '').includes('already exists')) {
+              console.log(`ℹ️ Branch '${finalBranchName}' already exists locally, checking out...`);
+              await runCommand('git', ['checkout', finalBranchName], {
+                cwd: finalProjectPath,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                timeoutMs: 60_000,
+                maxStdoutBytes: 64 * 1024,
+                maxStderrBytes: 64 * 1024,
+                signal: requestAbort.signal,
+              });
+              console.log(`✅ Checked out existing branch '${finalBranchName}'`);
+            } else {
+              throw new Error(`Failed to create branch: ${error.stderr || error.message}`);
+            }
+          }
 
           // Push the branch to remote
           console.log('🔄 Pushing branch to remote...');
-          const pushProcess = spawn('git', ['push', '-u', 'origin', finalBranchName], {
-            cwd: finalProjectPath,
-            stdio: 'pipe'
-          });
-
-          await new Promise((resolve, reject) => {
-            let stderr = '';
-            let stdout = '';
-            pushProcess.stdout.on('data', (data) => { stdout += data.toString(); });
-            pushProcess.stderr.on('data', (data) => { stderr += data.toString(); });
-            pushProcess.on('close', (code) => {
-              if (code === 0) {
-                console.log(`✅ Pushed branch '${finalBranchName}' to remote`);
-                resolve();
-              } else {
-                // Check if branch exists on remote but has different commits
-                if (stderr.includes('already exists') || stderr.includes('up-to-date')) {
-                  console.log(`ℹ️ Branch '${finalBranchName}' already exists on remote, using existing branch`);
-                  resolve();
-                } else {
-                  reject(new Error(`Failed to push branch: ${stderr}`));
-                }
-              }
+          try {
+            await runCommand('git', ['push', '-u', 'origin', finalBranchName], {
+              cwd: finalProjectPath,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              timeoutMs: 2 * 60_000,
+              maxStdoutBytes: 64 * 1024,
+              maxStderrBytes: 64 * 1024,
+              signal: requestAbort.signal,
             });
-          });
+            console.log(`✅ Pushed branch '${finalBranchName}' to remote`);
+          } catch (error) {
+            const stderr = error.stderr || '';
+            if (stderr.includes('already exists') || stderr.includes('up-to-date')) {
+              console.log(`ℹ️ Branch '${finalBranchName}' already exists on remote, using existing branch`);
+            } else {
+              throw new Error(`Failed to push branch: ${stderr || error.message}`);
+            }
+          }
 
           branchInfo = {
             name: finalBranchName,
@@ -1098,7 +1084,7 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         if (createPR) {
           // Get commit messages to generate PR description
           console.log('🔄 Generating PR title and description...');
-          const commitMessages = await getCommitMessages(finalProjectPath, 5);
+          const commitMessages = await getCommitMessages(finalProjectPath, 5, requestAbort.signal);
 
           // Use the first commit message as the PR title, or fallback to the agent message
           const prTitle = commitMessages.length > 0 ? commitMessages[0] : message;
@@ -1156,6 +1142,7 @@ router.post('/', validateExternalApiKey, async (req, res) => {
     // Handle response based on streaming mode
     if (stream) {
       // Streaming mode: end the SSE stream
+      requestAbort.cleanup();
       writer.end();
     } else {
       // Non-streaming mode: send filtered messages and token summary as JSON
@@ -1178,6 +1165,7 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         response.pullRequest = prInfo;
       }
 
+      requestAbort.cleanup();
       res.json(response);
     }
 
@@ -1185,7 +1173,7 @@ router.post('/', validateExternalApiKey, async (req, res) => {
     if (cleanup && githubUrl) {
       // Only cleanup if we cloned a repo (not for existing project paths)
       const sessionIdForCleanup = writer.getSessionId();
-      setTimeout(() => {
+      cleanupTimer = setTimeout(() => {
         cleanupProject(finalProjectPath, sessionIdForCleanup);
       }, 5000);
     }
@@ -1208,17 +1196,20 @@ router.post('/', validateExternalApiKey, async (req, res) => {
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('X-Accel-Buffering', 'no');
         writer = new SSEStreamWriter(res, req.user.id);
+        writer.startHeartbeat();
       }
 
-      if (!res.writableEnded) {
+      if (!res.writableEnded && !requestAbort.signal.aborted) {
         writer.send({
           type: 'error',
           error: error.message,
           message: `Failed: ${error.message}`
         });
+        requestAbort.cleanup();
         writer.end();
       }
-    } else if (!res.headersSent) {
+    } else if (!res.headersSent && !requestAbort.signal.aborted) {
+      requestAbort.cleanup();
       res.status(500).json({
         success: false,
         error: error.message

@@ -1,4 +1,5 @@
 import express from 'express';
+import { errorHandler } from '../../server/middleware/error-handler.js';
 
 export function createTestApp(router, options = {}) {
   const app = express();
@@ -12,5 +13,6 @@ export function createTestApp(router, options = {}) {
   }
 
   app.use(router);
+  app.use(errorHandler);
   return app;
 }

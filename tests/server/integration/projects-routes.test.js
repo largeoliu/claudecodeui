@@ -121,4 +121,22 @@ describe('projects routes', () => {
       expect(collisionResponse.body.error).toBe('Directory already exists');
     });
   });
+
+  it('does not delete the workspace root when github credentials are missing', async () => {
+    await withServerTestEnv(async ({ tempDir, importServerModule }) => {
+      const { default: router } = await importServerModule('../../server/routes/projects.js');
+      const app = createTestApp(router, { user: { id: 1, username: 'alice' } });
+      const newWorkspace = path.join(tempDir, 'missing-token-workspace');
+
+      const response = await request(app).post('/create-workspace').send({
+        workspaceType: 'new',
+        path: newWorkspace,
+        githubUrl: 'https://github.com/acme/repo.git',
+        githubTokenId: 999,
+      });
+
+      expect(response.status).toBe(404);
+      await expect(fs.stat(newWorkspace)).resolves.toMatchObject({ isDirectory: expect.any(Function) });
+    });
+  });
 });

@@ -175,14 +175,11 @@ router.post('/:name/update', async (req, res) => {
     }
 
     const wasRunning = isPluginRunning(pluginName);
-    if (wasRunning) {
-      await stopPluginServer(pluginName);
-    }
-
     const manifest = await updatePluginFromGit(pluginName);
 
     // Restart server if it was running before the update
     if (wasRunning && manifest.server) {
+      await stopPluginServer(pluginName);
       const pluginDir = getPluginDir(pluginName);
       if (pluginDir) {
         try {

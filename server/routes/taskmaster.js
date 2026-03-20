@@ -12,16 +12,11 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { promises as fsPromises } from 'fs';
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import os from 'os';
 import { extractProjectDirectory } from '../projects.js';
 import { detectTaskMasterMCPServer } from '../utils/mcp-detector.js';
 import { broadcastTaskMasterProjectUpdate, broadcastTaskMasterTasksUpdate } from '../utils/taskmaster-websocket.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { createRequestAbortController, runCommand } from '../utils/process-runner.js';
 
 const router = express.Router();
 
@@ -40,52 +35,19 @@ function isTimeoutError(error) {
 }
 
 function spawnWithTimeout(cmd, args, options, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  const proc = spawn(cmd, args, options);
-  let settled = false;
-  let timer;
-
-  const finalize = () => {
-    if (settled) return false;
-    settled = true;
-    clearTimeout(timer);
-    return true;
+  return {
+    promise: runCommand(cmd, args, {
+      ...options,
+      timeoutMs,
+      maxStdoutBytes: 256 * 1024,
+      maxStderrBytes: 256 * 1024,
+    }).catch((error) => {
+      if (error.code === 'ETIMEDOUT') {
+        console.warn(`[TaskMaster] Process timed out after ${timeoutMs}ms: ${cmd} ${args.join(' ')}`);
+      }
+      throw error;
+    }),
   };
-
-  const cleanup = () => {
-    clearTimeout(timer);
-    if (!proc.killed) proc.kill();
-  };
-
-  const deferred = {};
-
-  deferred.promise = new Promise((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout?.on('data', (data) => { stdout += data.toString(); });
-    proc.stderr?.on('data', (data) => { stderr += data.toString(); });
-
-    proc.on('close', (code) => {
-      if (!finalize()) return;
-      resolve({ code, stdout, stderr });
-    });
-
-    proc.on('error', (error) => {
-      if (!finalize()) return;
-      reject(error);
-    });
-
-    timer = setTimeout(() => {
-      if (!finalize()) return;
-      console.warn(`[TaskMaster] Process timed out after ${timeoutMs}ms: ${cmd} ${args.join(' ')}`);
-      cleanup();
-      reject(createTimeoutError(cmd, args, timeoutMs));
-    }, timeoutMs);
-  });
-
-  deferred.kill = cleanup;
-  deferred.proc = proc;
-  return deferred;
 }
 
 /**
@@ -93,74 +55,43 @@ function spawnWithTimeout(cmd, args, options, timeoutMs = DEFAULT_TIMEOUT_MS) {
  * @returns {Promise<Object>} Installation status result
  */
 async function checkTaskMasterInstallation() {
-    return new Promise((resolve) => {
-        // Check if task-master command is available
-        const child = spawn('which', ['task-master'], { 
+    try {
+        const whichResult = await runCommand('which', ['task-master'], {
             stdio: ['ignore', 'pipe', 'pipe'],
-            shell: true 
+            timeoutMs: 10_000,
+            maxStdoutBytes: 16 * 1024,
+            maxStderrBytes: 16 * 1024,
         });
-        
-        let output = '';
-        let errorOutput = '';
-        
-        child.stdout.on('data', (data) => {
-            output += data.toString();
-        });
-        
-        child.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-        });
-        
-        child.on('close', (code) => {
-            if (code === 0 && output.trim()) {
-                // TaskMaster is installed, get version
-                const versionChild = spawn('task-master', ['--version'], { 
-                    stdio: ['ignore', 'pipe', 'pipe'],
-                    shell: true 
-                });
-                
-                let versionOutput = '';
-                
-                versionChild.stdout.on('data', (data) => {
-                    versionOutput += data.toString();
-                });
-                
-                versionChild.on('close', (versionCode) => {
-                    resolve({
-                        isInstalled: true,
-                        installPath: output.trim(),
-                        version: versionCode === 0 ? versionOutput.trim() : 'unknown',
-                        reason: null
-                    });
-                });
-                
-                versionChild.on('error', () => {
-                    resolve({
-                        isInstalled: true,
-                        installPath: output.trim(),
-                        version: 'unknown',
-                        reason: null
-                    });
-                });
-            } else {
-                resolve({
-                    isInstalled: false,
-                    installPath: null,
-                    version: null,
-                    reason: 'TaskMaster CLI not found in PATH'
-                });
-            }
-        });
-        
-        child.on('error', (error) => {
-            resolve({
-                isInstalled: false,
-                installPath: null,
-                version: null,
-                reason: `Error checking installation: ${error.message}`
+
+        let version = 'unknown';
+        try {
+            const versionResult = await runCommand('task-master', ['--version'], {
+                stdio: ['ignore', 'pipe', 'pipe'],
+                timeoutMs: 10_000,
+                maxStdoutBytes: 16 * 1024,
+                maxStderrBytes: 16 * 1024,
             });
-        });
-    });
+            version = versionResult.stdout.trim() || 'unknown';
+        } catch {
+            version = 'unknown';
+        }
+
+        return {
+            isInstalled: true,
+            installPath: whichResult.stdout.trim(),
+            version,
+            reason: null,
+        };
+    } catch (error) {
+        return {
+            isInstalled: false,
+            installPath: null,
+            version: null,
+            reason: error.code === 'ENOENT'
+                ? 'TaskMaster CLI not found in PATH'
+                : `Error checking installation: ${error.message}`,
+        };
+    }
 }
 
 /**
@@ -521,6 +452,7 @@ router.post('/initialize/:projectName', async (req, res) => {
  * Get the next recommended task using task-master CLI
  */
 router.get('/next/:projectName', async (req, res) => {
+    const requestAbort = createRequestAbortController(req, res);
     try {
         const { projectName } = req.params;
         
@@ -539,7 +471,7 @@ router.get('/next/:projectName', async (req, res) => {
         try {
             const { code, stdout, stderr } = await spawnWithTimeout(
                 'task-master', ['next'],
-                { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+                { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'], signal: requestAbort.signal },
                 30_000
             ).promise;
 
@@ -570,6 +502,8 @@ router.get('/next/:projectName', async (req, res) => {
             // Use localhost to bypass proxy for internal server-to-server calls
             const ac = new AbortController();
             const timeout = setTimeout(() => ac.abort(), 10_000);
+            const abortFallback = () => ac.abort();
+            requestAbort.signal.addEventListener('abort', abortFallback, { once: true });
             let tasksResponse;
             try {
                 tasksResponse = await fetch(`http://localhost:${process.env.SERVER_PORT || process.env.PORT || '3001'}/api/taskmaster/tasks/${encodeURIComponent(projectName)}`, {
@@ -580,6 +514,7 @@ router.get('/next/:projectName', async (req, res) => {
                 });
             } finally {
                 clearTimeout(timeout);
+                requestAbort.signal.removeEventListener('abort', abortFallback);
             }
 
             if (tasksResponse.ok) {
@@ -607,6 +542,8 @@ router.get('/next/:projectName', async (req, res) => {
             error: 'Failed to get next task',
             message: error.message
         });
+    } finally {
+        requestAbort.cleanup();
     }
 });
 
@@ -1016,6 +953,7 @@ router.delete('/prd/:projectName/:fileName', async (req, res) => {
  * Initialize TaskMaster in a project
  */
 router.post('/init/:projectName', async (req, res) => {
+    const requestAbort = createRequestAbortController(req, res);
     try {
         const { projectName } = req.params;
         
@@ -1042,68 +980,30 @@ router.post('/init/:projectName', async (req, res) => {
             // Directory doesn't exist, we can proceed
         }
 
-        // Run taskmaster init command
-        const initProcess = spawn('npx', ['task-master', 'init'], {
+        const { stdout } = await runCommand('npx', ['task-master', 'init'], {
             cwd: projectPath,
-            stdio: ['pipe', 'pipe', 'pipe']
+            stdio: ['pipe', 'pipe', 'pipe'],
+            timeoutMs: 60_000,
+            maxStdoutBytes: 256 * 1024,
+            maxStderrBytes: 256 * 1024,
+            signal: requestAbort.signal,
+            input: 'yes\n',
         });
 
-        let stdout = '';
-        let stderr = '';
-        let settled = false;
-
-        const cleanup = () => {
-            if (settled) return;
-            settled = true;
-            initProcess.stdout?.removeAllListeners('data');
-            initProcess.stderr?.removeAllListeners('data');
-            initProcess.removeAllListeners('close');
-            clearTimeout(timer);
-            if (!initProcess.killed) initProcess.kill();
-        };
-
-        const timer = setTimeout(() => {
-            if (!settled) {
-                console.warn('[TaskMaster] init timed out');
-                res.status(504).json({ error: 'Command timed out' });
-                cleanup();
-            }
-        }, 60_000);
-
-        initProcess.stdout.on('data', (data) => { stdout += data.toString(); });
-        initProcess.stderr.on('data', (data) => { stderr += data.toString(); });
-
-        initProcess.on('close', (code) => {
-            if (settled) return;
-            cleanup();
-            if (code === 0) {
-                if (req.app.locals.wss) {
-                    broadcastTaskMasterProjectUpdate(req.app.locals.wss, projectName, { hasTaskmaster: true, status: 'initialized' });
-                }
-                res.json({ projectName, projectPath, message: 'TaskMaster initialized successfully', output: stdout, timestamp: new Date().toISOString() });
-            } else {
-                console.error('TaskMaster init failed:', stderr);
-                res.status(500).json({ error: 'Failed to initialize TaskMaster', message: stderr || stdout, code });
-            }
-        });
-
-        initProcess.on('error', (error) => {
-            if (!settled) {
-                console.error('TaskMaster init error:', error.message);
-                res.status(500).json({ error: 'Failed to initialize TaskMaster', message: error.message });
-                cleanup();
-            }
-        });
-
-        initProcess.stdin.write('yes\n');
-        initProcess.stdin.end();
+        if (req.app.locals.wss) {
+            broadcastTaskMasterProjectUpdate(req.app.locals.wss, projectName, { hasTaskmaster: true, status: 'initialized' });
+        }
+        res.json({ projectName, projectPath, message: 'TaskMaster initialized successfully', output: stdout, timestamp: new Date().toISOString() });
 
     } catch (error) {
         console.error('TaskMaster init error:', error);
-        res.status(500).json({
-            error: 'Failed to initialize TaskMaster',
-            message: error.message
+        const statusCode = isTimeoutError(error) ? 504 : 500;
+        res.status(statusCode).json({
+            error: isTimeoutError(error) ? 'Command timed out' : 'Failed to initialize TaskMaster',
+            message: error.stderr || error.message
         });
+    } finally {
+        requestAbort.cleanup();
     }
 });
 
@@ -1112,6 +1012,7 @@ router.post('/init/:projectName', async (req, res) => {
  * Add a new task to the project
  */
 router.post('/add-task/:projectName', async (req, res) => {
+    const requestAbort = createRequestAbortController(req, res);
     try {
         const { projectName } = req.params;
         const { prompt, title, description, priority = 'medium', dependencies } = req.body;
@@ -1155,7 +1056,7 @@ router.post('/add-task/:projectName', async (req, res) => {
         // Run task-master add-task command
         const { code, stdout, stderr } = await spawnWithTimeout(
             'npx', args,
-            { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+            { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'], signal: requestAbort.signal },
             30_000
         ).promise;
 
@@ -1179,6 +1080,8 @@ router.post('/add-task/:projectName', async (req, res) => {
             error: 'Failed to add task',
             message: error.message
         });
+    } finally {
+        requestAbort.cleanup();
     }
 });
 
@@ -1187,6 +1090,7 @@ router.post('/add-task/:projectName', async (req, res) => {
  * Update a specific task using TaskMaster CLI
  */
 router.put('/update-task/:projectName/:taskId', async (req, res) => {
+    const requestAbort = createRequestAbortController(req, res);
     try {
         const { projectName, taskId } = req.params;
         const { title, description, status, priority, details } = req.body;
@@ -1207,7 +1111,7 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
             try {
                 const { code, stdout, stderr } = await spawnWithTimeout(
                     'npx', ['task-master-ai', 'set-status', `--id=${taskId}`, `--status=${status}`],
-                    { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+                    { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'], signal: requestAbort.signal },
                     30_000
                 ).promise;
 
@@ -1238,7 +1142,7 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
             try {
                 const { code, stdout, stderr } = await spawnWithTimeout(
                     'npx', ['task-master-ai', 'update-task', `--id=${taskId}`, `--prompt=${prompt}`],
-                    { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+                    { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'], signal: requestAbort.signal },
                     30_000
                 ).promise;
 
@@ -1264,6 +1168,8 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
             error: 'Failed to update task',
             message: error.message
         });
+    } finally {
+        requestAbort.cleanup();
     }
 });
 
@@ -1272,6 +1178,7 @@ router.put('/update-task/:projectName/:taskId', async (req, res) => {
  * Parse a PRD file to generate tasks
  */
 router.post('/parse-prd/:projectName', async (req, res) => {
+    const requestAbort = createRequestAbortController(req, res);
     try {
         const { projectName } = req.params;
         const { fileName = 'prd.txt', numTasks, append = false } = req.body;
@@ -1314,7 +1221,7 @@ router.post('/parse-prd/:projectName', async (req, res) => {
         try {
             const { code, stdout, stderr } = await spawnWithTimeout(
                 'npx', args,
-                { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'] },
+                { cwd: projectPath, stdio: ['pipe', 'pipe', 'pipe'], signal: requestAbort.signal },
                 60_000
             ).promise;
 
@@ -1335,6 +1242,8 @@ router.post('/parse-prd/:projectName', async (req, res) => {
     } catch (error) {
         console.error('Parse PRD error:', error);
         res.status(500).json({ error: 'Failed to parse PRD', message: error.message });
+    } finally {
+        requestAbort.cleanup();
     }
 });
 

@@ -1807,18 +1807,37 @@ async function parseCodexSessionFile(filePath) {
   }
 }
 
-// Extract real per-turn timestamps from a Codex rollout JSONL file.
-// Returns a Map<turnId, { userTimestamp, assistantTimestamp }> so each turn's
-// user and assistant messages get the real timestamp from the JSONL log.
-async function extractTurnTimestampsFromRollout(rolloutPath) {
-  const turnTimestamps = new Map();
+function createCodexTurnTimeline() {
+  return {
+    startTimestamp: null,
+    userTimestamps: [],
+    assistantTimestamps: [],
+    reasoningTimestamps: [],
+  };
+}
+
+function getOrCreateCodexTurnTimeline(turnTimelines, turnId) {
+  if (!turnId) {
+    return null;
+  }
+
+  if (!turnTimelines.has(turnId)) {
+    turnTimelines.set(turnId, createCodexTurnTimeline());
+  }
+
+  return turnTimelines.get(turnId);
+}
+
+async function extractCodexTurnTimelinesFromRollout(rolloutPath) {
+  const turnTimelines = new Map();
 
   if (!rolloutPath) {
-    return turnTimestamps;
+    return turnTimelines;
   }
 
   try {
     const content = await fs.readFile(rolloutPath, 'utf8');
+    let currentTurnId = null;
 
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
@@ -1827,68 +1846,92 @@ async function extractTurnTimestampsFromRollout(rolloutPath) {
       }
 
       try {
-        const event = JSON.parse(trimmed);
-        const ts = event.timestamp;
-        if (!ts) {
+        const entry = JSON.parse(trimmed);
+        const timestamp = entry.timestamp;
+        const payload = entry.payload;
+        if (!timestamp || !payload) {
           continue;
         }
 
-        const { type: eventType, payload } = event;
-        if (!payload) {
-          continue;
-        }
-
-        // task_started contains turn_id — mark the start of a turn
-        if (eventType === 'event_msg' && payload.type === 'task_started' && payload.turn_id) {
-          if (!turnTimestamps.has(payload.turn_id)) {
-            turnTimestamps.set(payload.turn_id, { startTimestamp: ts });
+        if (entry.type === 'event_msg' && payload.type === 'task_started' && payload.turn_id) {
+          currentTurnId = payload.turn_id;
+          const turnTimeline = getOrCreateCodexTurnTimeline(turnTimelines, currentTurnId);
+          if (turnTimeline && !turnTimeline.startTimestamp) {
+            turnTimeline.startTimestamp = timestamp;
           }
           continue;
         }
 
-        // user_message — capture real user message timestamp
-        if (eventType === 'event_msg' && payload.type === 'user_message') {
-          // Find the most recent turn that doesn't yet have a userTimestamp
-          for (const [, turnTs] of [...turnTimestamps].reverse()) {
-            if (!turnTs.userTimestamp) {
-              turnTs.userTimestamp = ts;
-              break;
-            }
+        if (entry.type === 'turn_context' && payload.turn_id) {
+          currentTurnId = payload.turn_id;
+          const turnTimeline = getOrCreateCodexTurnTimeline(turnTimelines, currentTurnId);
+          if (turnTimeline && !turnTimeline.startTimestamp) {
+            turnTimeline.startTimestamp = timestamp;
           }
           continue;
         }
 
-        // First agent_message per turn — capture as assistant timestamp
-        if (eventType === 'event_msg' && payload.type === 'agent_message') {
-          for (const [, turnTs] of [...turnTimestamps].reverse()) {
-            if (!turnTs.assistantTimestamp) {
-              turnTs.assistantTimestamp = ts;
-              break;
-            }
-          }
+        if (!currentTurnId) {
           continue;
+        }
+
+        const turnTimeline = getOrCreateCodexTurnTimeline(turnTimelines, currentTurnId);
+        if (!turnTimeline) {
+          continue;
+        }
+
+        if (entry.type === 'event_msg' && isVisibleCodexUserMessage(payload)) {
+          turnTimeline.userTimestamps.push(timestamp);
+          continue;
+        }
+
+        if (entry.type === 'event_msg' && payload.type === 'agent_message') {
+          turnTimeline.assistantTimestamps.push(timestamp);
+          continue;
+        }
+
+        if (entry.type === 'response_item' && payload.type === 'reasoning') {
+          turnTimeline.reasoningTimestamps.push(timestamp);
         }
       } catch {
-        // Skip malformed lines
+        // Skip malformed rollout entries.
       }
     }
 
-    return turnTimestamps;
+    return turnTimelines;
   } catch {
-    return turnTimestamps;
+    return turnTimelines;
   }
 }
 
+function createCodexTurnTimestampCursor(turnTimeline) {
+  const userTimestamps = [...(turnTimeline?.userTimestamps || [])];
+  const assistantTimestamps = [...(turnTimeline?.assistantTimestamps || [])];
+  const reasoningTimestamps = [...(turnTimeline?.reasoningTimestamps || [])];
+  const startTimestamp = turnTimeline?.startTimestamp || null;
+  let lastTimestamp = startTimestamp;
+
+  const consumeTimestamp = (timestamps) => {
+    const nextTimestamp = timestamps.shift() || lastTimestamp || startTimestamp;
+    if (nextTimestamp) {
+      lastTimestamp = nextTimestamp;
+    }
+    return nextTimestamp;
+  };
+
+  return {
+    nextUserTimestamp: () => consumeTimestamp(userTimestamps),
+    nextAssistantTimestamp: () => consumeTimestamp(assistantTimestamps),
+    nextReasoningTimestamp: () => consumeTimestamp(reasoningTimestamps),
+    currentTimestamp: () => lastTimestamp || startTimestamp,
+  };
+}
 // Get messages for a specific Codex session
 async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
   try {
     const thread = await readCodexThread(sessionId, true);
     const messages = [];
-
-    // Try to extract real per-turn timestamps from the rollout JSONL file.
-    const turnTimestamps = await extractTurnTimestampsFromRollout(thread.path);
-
-    // Fallback: generate monotonically increasing timestamps when no rollout data.
+    const turnTimelines = await extractCodexTurnTimelinesFromRollout(thread.path);
     let sequence = 0;
     const baseTimestamp = (thread.createdAt || Math.floor(Date.now() / 1000)) * 1000;
     const makeFallbackTimestamp = () =>
@@ -1902,10 +1945,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
     };
 
     for (const turn of thread.turns || []) {
-      // Look up real timestamps for this turn from the JSONL file.
-      const turnTs = turnTimestamps.get(turn.id) || {};
-      const userTs = turnTs.userTimestamp || turnTs.startTimestamp || null;
-      const assistantTs = turnTs.assistantTimestamp || null;
+      const timestampCursor = createCodexTurnTimestampCursor(turnTimelines.get(turn.id));
 
       for (const item of turn.items || []) {
         if (item.type === 'userMessage') {
@@ -1922,7 +1962,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'user',
                 content: text,
               },
-            }, userTs);
+            }, timestampCursor.nextUserTimestamp());
           }
           continue;
         }
@@ -1935,7 +1975,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'assistant',
                 content: item.text,
               },
-            }, assistantTs);
+            }, timestampCursor.nextAssistantTimestamp());
           }
           continue;
         }
@@ -1948,7 +1988,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'assistant',
                 content: item.text,
               },
-            }, assistantTs);
+            }, timestampCursor.nextAssistantTimestamp());
           }
           continue;
         }
@@ -1965,7 +2005,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
                 role: 'assistant',
                 content: reasoningText,
               },
-            });
+            }, timestampCursor.nextReasoningTimestamp());
           }
           continue;
         }

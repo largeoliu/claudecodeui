@@ -1486,6 +1486,9 @@ class CodexAppServer {
     let thread;
 
     try {
+      if (includeTurns) {
+        await this.ensureThreadLoaded(threadId);
+      }
       thread = await this.readThread(threadId, includeTurns);
     } catch (error) {
       const normalizedError = normalizeAppServerError(error, 'Failed to read Codex thread');

@@ -1,8 +1,11 @@
+/* Design Tokens - Antigravity-Inspired IDE */
+@import './lib/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Global spinner animation - defined early to ensure it loads */
+/* Global spinner animation */
 @keyframes messageIn {
   from {
     opacity: 0;
@@ -19,89 +22,13 @@
 }
 
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 @-webkit-keyframes spin {
-  0% {
-    -webkit-transform: rotate(0deg);
-  }
-  100% {
-    -webkit-transform: rotate(360deg);
-  }
-}
-
-@layer base {
-  :root {
-    --background: 240 5% 7%; /* #121212 approx */
-    --foreground: 0 0% 100%;
-    --card: 240 5% 10%;
-    --card-foreground: 0 0% 100%;
-    --popover: 240 5% 5%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 0 0% 92%; /* Softer off-white for Absolute Neutral */
-    --primary-foreground: 0 0% 0%;
-    --secondary: 240 5% 15%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 240 5% 15%;
-    --muted-foreground: 0 0% 60%;
-    --accent: 0 0% 92%;
-    --accent-foreground: 0 0% 0%;
-    --destructive: 0 0% 30%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 20% / 0.5;
-    --input: 0 0% 20% / 0.5;
-    --ring: 0 0% 100% / 0.2;
-    --radius: 0.5rem;
-
-    /* Nav design tokens - Absolute Neutral */
-    --nav-glass-bg: 0 0% 0% / 0.6;
-    --nav-glass-blur: 16px;
-    --nav-glass-saturate: 1.5;
-    --nav-tab-glow: 0 0% 100% / 0.06;
-    --nav-tab-ring: 0 0% 100% / 0.1;
-    --nav-float-shadow: 0 0% 0% / 0.9;
-    --nav-float-ring: 0 0% 100% / 0.08;
-    --nav-divider-color: 0 0% 100% / 0.05;
-    --nav-input-bg: 0 0% 0% / 0.2;
-    --nav-input-focus-ring: 0 0% 100% / 0.2;
-    
-    /* New Premium Tokens */
-    --accent-glow: 210 100% 60% / 0.15;
-    --accent-purple: 270 100% 65%;
-    --accent-purple-glow: 270 100% 65% / 0.2;
-    --glass-border: 0 0% 100% / 0.08;
-    --glass-reflect: 0 0% 100% / 0.03;
-    --input-focus-glow: 210 100% 60% / 0.1;
-  }
-
-  .dark {
-    /* Same as root - Absolute Neutral */
-    --background: 240 5% 7%;
-    --foreground: 0 0% 100%;
-    --card: 240 5% 10%;
-    --card-foreground: 0 0% 100%;
-    --popover: 240 5% 5%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 0 0% 100%;
-    --primary-foreground: 0 0% 0%;
-    --secondary: 240 5% 15%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 240 5% 15%;
-    --muted-foreground: 0 0% 60%;
-    --accent: 0 0% 100%;
-    --accent-foreground: 0 0% 0%;
-    --destructive: 0 0% 30%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 20% / 0.5;
-    --input: 0 0% 22% / 0.5;
-    --ring: 0 0% 100% / 0.2;
-  }
+  0% { -webkit-transform: rotate(0deg); }
+  100% { -webkit-transform: rotate(360deg); }
 }
 
 @layer base {

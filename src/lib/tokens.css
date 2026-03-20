@@ -1,0 +1,114 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* ===== 背景色 ===== */
+  --background: 230 14% 5%;      /* #0F1115 */
+  --surface: 230 12% 7%;         /* #16181D */
+  --surface-elevated: 230 10% 9%; /* #1a1d22 */
+  --overlay: 230 12% 7% / 0.8;   /* rgba(22, 24, 29, 0.8) */
+
+  /* ===== 文字色 ===== */
+  --foreground: 210 20% 96%;     /* #F3F4F6 */
+  --foreground-secondary: 215 16% 65%; /* #9CA3AF */
+  --foreground-muted: 215 14% 50%;    /* #6B7280 */
+  --foreground-code: 210 14% 90%;     /* #E5E7EB */
+
+  /* ===== 边框色 ===== */
+  --border-subtle: 230 8% 14%;   /* #2D2E32 */
+  --border-active: 230 8% 20%;   /* #3F4046 */
+  --border-focus: 230 8% 30%;    /* #4D4E52 */
+
+  /* ===== 语义色 ===== */
+  --success: 160 84% 39%;        /* #10B981 */
+  --success-light: rgba(16, 185, 129, 0.1);
+  --success-border: rgba(16, 185, 129, 0.3);
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 92% 50%;         /* #F59E0B */
+  --warning-light: rgba(245, 158, 11, 0.1);
+  --warning-border: rgba(245, 158, 11, 0.3);
+  --warning-foreground: 0 0% 0%;
+
+  --error: 0 84% 60%;            /* #EF4444 */
+  --error-light: rgba(239, 68, 68, 0.1);
+  --error-border: rgba(239, 68, 68, 0.3);
+  --error-foreground: 0 0% 100%;
+
+  /* ===== 灰度梯度 ===== */
+  --gray-50: 210 20% 96%;
+  --gray-100: 210 14% 94%;
+  --gray-200: 230 8% 90%;
+  --gray-300: 230 8% 80%;
+  --gray-400: 215 16% 65%;
+  --gray-500: 215 14% 50%;
+  --gray-600: 230 10% 28%;
+  --gray-700: 230 12% 16%;
+  --gray-800: 230 12% 10%;
+  --gray-900: 230 14% 6%;
+  --gray-950: 230 14% 4%;
+
+  /* ===== 白色透明度系统 ===== */
+  --white-95: rgba(255, 255, 255, 0.95);
+  --white-90: rgba(255, 255, 255, 0.90);
+  --white-80: rgba(255, 255, 255, 0.80);
+  --white-70: rgba(255, 255, 255, 0.70);
+  --white-60: rgba(255, 255, 255, 0.60);
+  --white-50: rgba(255, 255, 255, 0.50);
+  --white-40: rgba(255, 255, 255, 0.40);
+  --white-30: rgba(255, 255, 255, 0.30);
+  --white-20: rgba(255, 255, 255, 0.20);
+  --white-15: rgba(255, 255, 255, 0.15);
+  --white-12: rgba(255, 255, 255, 0.12);
+  --white-10: rgba(255, 255, 255, 0.10);
+  --white-08: rgba(255, 255, 255, 0.08);
+  --white-06: rgba(255, 255, 255, 0.06);
+  --white-04: rgba(255, 255, 255, 0.04);
+  --white-02: rgba(255, 255, 255, 0.02);
+
+  /* ===== 圆角 ===== */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ===== 阴影 ===== */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+  /* ===== 毛玻璃效果 ===== */
+  --glass-blur: 12px;
+  --glass-saturate: 150%;
+
+  /* ===== 过渡 ===== */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark {
+  --background: 230 14% 5%;
+  --surface: 230 12% 7%;
+  --foreground: 210 20% 96%;
+  --foreground-secondary: 215 16% 65%;
+  --foreground-muted: 215 14% 50%;
+  --border: 230 8% 14%;
+  --input: 230 8% 14%;
+  --ring: 210 20% 96%;
+  --primary: 210 20% 96%;
+  --primary-foreground: 230 14% 5%;
+  --secondary: 230 12% 10%;
+  --secondary-foreground: 210 20% 96%;
+  --muted: 230 12% 10%;
+  --muted-foreground: 215 14% 50%;
+  --accent: 210 20% 96%;
+  --accent-foreground: 230 14% 5%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --card: 230 12% 7%;
+  --card-foreground: 210 20% 96%;
+  --popover: 230 12% 7%;
+  --popover-foreground: 210 20% 96%;
+}

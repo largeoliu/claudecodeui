@@ -9,6 +9,40 @@ export type InteractiveDecision = {
 
 export const INTERACTIVE_REQUEST_SEND_FAILURE_MESSAGE = 'Response was not delivered. Reconnect and try again.';
 export const INTERACTIVE_REQUEST_RETRY_MESSAGE = 'Previous submission was not confirmed. Please submit again.';
+export const INTERACTIVE_REQUEST_RECEIPT_TIMEOUT_MS = 5_000;
+export const INTERACTIVE_REQUEST_COMPLETION_TIMEOUT_MS = 15_000;
+export const INTERACTIVE_REQUEST_RECEIPT_TIMEOUT_MESSAGE =
+  'Server did not confirm receipt of the response. Please submit again.';
+export const INTERACTIVE_REQUEST_COMPLETION_TIMEOUT_MESSAGE =
+  'Server received the response, but completion was not confirmed. Please submit again if the request is still pending.';
+
+export function isInteractiveRequestInFlight(
+  deliveryState: PendingPermissionRequest['deliveryState'],
+): deliveryState is 'submitting' | 'processing' {
+  return deliveryState === 'submitting' || deliveryState === 'processing';
+}
+
+export function getInteractiveRequestTimeoutMs(
+  deliveryState: PendingPermissionRequest['deliveryState'],
+): number | null {
+  if (deliveryState === 'submitting') {
+    return INTERACTIVE_REQUEST_RECEIPT_TIMEOUT_MS;
+  }
+
+  if (deliveryState === 'processing') {
+    return INTERACTIVE_REQUEST_COMPLETION_TIMEOUT_MS;
+  }
+
+  return null;
+}
+
+export function getInteractiveRequestTimeoutMessage(
+  deliveryState: PendingPermissionRequest['deliveryState'],
+): string {
+  return deliveryState === 'processing'
+    ? INTERACTIVE_REQUEST_COMPLETION_TIMEOUT_MESSAGE
+    : INTERACTIVE_REQUEST_RECEIPT_TIMEOUT_MESSAGE;
+}
 
 export function createPendingInteractiveRequest(
   request: PendingPermissionRequest,
@@ -159,6 +193,14 @@ export function mergePendingInteractiveRequests(
         ...normalizedRequest,
         deliveryState: 'failed',
         deliveryError: INTERACTIVE_REQUEST_RETRY_MESSAGE,
+      };
+    }
+
+    if (previousRequest.deliveryState === 'processing') {
+      return {
+        ...normalizedRequest,
+        deliveryState: 'processing',
+        deliveryError: null,
       };
     }
 

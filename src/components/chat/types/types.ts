@@ -5,7 +5,7 @@ export type Provider = SessionProvider;
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
 export type CodexInteractionMode = 'edit' | 'plan';
 export type CodexApprovalPolicy = 'untrusted' | 'on-request' | 'never';
-export type InteractiveRequestDeliveryState = 'idle' | 'submitting' | 'failed';
+export type InteractiveRequestDeliveryState = 'idle' | 'submitting' | 'processing' | 'failed';
 
 export interface ChatImage {
   data: string;

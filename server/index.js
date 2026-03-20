@@ -1544,6 +1544,11 @@ function handleChatConnection(ws, request) {
             } else if (data.type === 'codex-approval-response') {
                 if (data.requestId) {
                     console.log('[DEBUG] Codex approval response:', data.requestId);
+                    writer.send({
+                        type: 'codex-interactive-response-received',
+                        requestId: data.requestId,
+                        requestKind: 'approval',
+                    });
                     try {
                         const result = await respondToCodexApproval(data.requestId, {
                             allow: Boolean(data.allow),
@@ -1577,6 +1582,11 @@ function handleChatConnection(ws, request) {
             } else if (data.type === 'codex-user-input-response') {
                 if (data.requestId) {
                     console.log('[DEBUG] Codex user input response:', data.requestId);
+                    writer.send({
+                        type: 'codex-interactive-response-received',
+                        requestId: data.requestId,
+                        requestKind: 'user-input',
+                    });
                     try {
                         const result = await respondToCodexUserInput(data.requestId, data.answers || {});
 
@@ -1607,6 +1617,11 @@ function handleChatConnection(ws, request) {
             } else if (data.type === 'codex-command-stdin-response') {
                 if (data.requestId) {
                     console.log('[DEBUG] Codex terminal input response:', data.requestId);
+                    writer.send({
+                        type: 'codex-interactive-response-received',
+                        requestId: data.requestId,
+                        requestKind: 'terminal-stdin',
+                    });
                     try {
                         const result = await respondToCodexCommandStdin(data.requestId, data.text || '');
 

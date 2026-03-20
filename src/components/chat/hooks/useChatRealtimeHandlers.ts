@@ -1433,6 +1433,18 @@ export function useChatRealtimeHandlers({
         );
         break;
 
+      case 'codex-interactive-response-received':
+        if (!latestMessage.requestId) {
+          break;
+        }
+        {
+          const requestId = latestMessage.requestId;
+          setPendingPermissionRequests((previous) =>
+            setInteractiveRequestDeliveryState(previous, requestId, 'processing'),
+          );
+        }
+        break;
+
       case 'codex-interactive-response-ack':
         if (!latestMessage.requestId) {
           break;

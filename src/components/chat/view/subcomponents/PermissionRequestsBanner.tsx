@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { PendingPermissionRequest } from '../../types/types';
 import { buildClaudeToolPermissionEntry, formatToolInputForDisplay } from '../../utils/chatPermissions';
 import { getClaudeSettings } from '../../utils/chatStorage';
+import { isInteractiveRequestInFlight } from '../../utils/interactiveRequestTransport';
 import { getPermissionPanel, registerPermissionPanel } from '../../tools/configs/permissionPanelRegistry';
 import {
   AskUserQuestionPanel,
@@ -35,7 +36,7 @@ export default function PermissionRequestsBanner({
   return (
     <div className="mb-3 space-y-3">
       {pendingPermissionRequests.map((request) => {
-        const isSubmitting = request.deliveryState === 'submitting';
+        const isSubmitting = isInteractiveRequestInFlight(request.deliveryState);
         const deliveryError = request.deliveryState === 'failed' ? request.deliveryError : null;
         const CustomPanel = getPermissionPanel(request.toolName);
         if (CustomPanel) {

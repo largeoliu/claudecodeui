@@ -58,7 +58,6 @@ const projectsHaveChanges = (
     }
 
     return (
-      serialize(nextProject.cursorSessions) !== serialize(prevProject.cursorSessions) ||
       serialize(nextProject.codexSessions) !== serialize(prevProject.codexSessions) ||
       serialize(nextProject.geminiSessions) !== serialize(prevProject.geminiSessions)
     );
@@ -69,7 +68,6 @@ const getProjectSessions = (project: Project): ProjectSession[] => {
   return [
     ...(project.sessions ?? []),
     ...(project.codexSessions ?? []),
-    ...(project.cursorSessions ?? []),
     ...(project.geminiSessions ?? []),
   ];
 };
@@ -355,21 +353,6 @@ export function useProjectsState({
         return;
       }
 
-      const cursorSession = project.cursorSessions?.find((session) => session.id === sessionId);
-      if (cursorSession) {
-        const shouldUpdateProject = selectedProject?.name !== project.name;
-        const shouldUpdateSession =
-          selectedSession?.id !== sessionId || selectedSession.__provider !== 'cursor';
-
-        if (shouldUpdateProject) {
-          setSelectedProject(project);
-        }
-        if (shouldUpdateSession) {
-          setSelectedSession({ ...cursorSession, __provider: 'cursor' });
-        }
-        return;
-      }
-
       const codexSession = project.codexSessions?.find((session) => session.id === sessionId);
       if (codexSession) {
         const shouldUpdateProject = selectedProject?.name !== project.name;
@@ -421,11 +404,6 @@ export function useProjectsState({
 
       if (activeTab === 'tasks' || activeTab === 'preview') {
         setActiveTab('chat');
-      }
-
-      const provider = localStorage.getItem('selected-provider') || 'claude';
-      if (provider === 'cursor') {
-        sessionStorage.setItem('cursorSessionId', session.id);
       }
 
       if (isMobile) {

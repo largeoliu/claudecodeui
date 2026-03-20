@@ -16,7 +16,6 @@
     "error": "Error",
     "tool": "Tool",
     "claude": "Claude",
-    "cursor": "Cursor",
     "codex": "Codex",
     "gemini": "Gemini"
   },
@@ -213,12 +212,10 @@
     "providerInfo": {
       "anthropic": "by Anthropic",
       "openai": "by OpenAI",
-      "cursorEditor": "AI Code Editor",
       "google": "by Google"
     },
     "readyPrompt": {
       "claude": "Ready to use Claude with {{model}}. Start typing your message below.",
-      "cursor": "Ready to use Cursor with {{model}}. Start typing your message below.",
       "codex": "Ready to use Codex with {{model}}. Start typing your message below.",
       "gemini": "Ready to use Gemini with {{model}}. Start typing your message below.",
       "default": "Select a provider above to begin"

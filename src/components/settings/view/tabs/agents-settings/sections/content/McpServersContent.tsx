@@ -183,86 +183,6 @@ function ClaudeMcpServers({
   );
 }
 
-type CursorMcpServersProps = {
-  agent: 'cursor';
-  servers: McpServer[];
-  onAdd: () => void;
-  onEdit: (server: McpServer) => void;
-  onDelete: (serverId: string) => void;
-};
-
-function CursorMcpServers({ servers, onAdd, onEdit, onDelete }: Omit<CursorMcpServersProps, 'agent'>) {
-  const { t } = useTranslation('settings');
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Server className="h-5 w-5 text-purple-500" />
-        <h3 className="text-lg font-medium text-foreground">{t('mcpServers.title')}</h3>
-      </div>
-      <p className="text-sm text-muted-foreground">{t('mcpServers.description.cursor')}</p>
-
-      <div className="flex items-center justify-between">
-        <Button onClick={onAdd} className="bg-purple-600 text-white hover:bg-purple-700" size="sm">
-          <Plus className="mr-2 h-4 w-4" />
-          {t('mcpServers.addButton')}
-        </Button>
-      </div>
-
-      <div className="space-y-2">
-        {servers.map((server) => {
-          const serverId = server.id || server.name;
-
-          return (
-            <div key={serverId} className="rounded-lg border border-border bg-card/50 p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Terminal className="h-4 w-4" />
-                    <span className="font-medium text-foreground">{server.name}</span>
-                    <Badge variant="outline" className="text-xs">stdio</Badge>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {server.config?.command && (
-                      <div>
-                        {t('mcpServers.config.command')}:{' '}
-                        <code className="rounded bg-muted px-1 text-xs">{server.config.command}</code>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="ml-4 flex items-center gap-2">
-                  <Button
-                    onClick={() => onEdit(server)}
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-foreground"
-                    title={t('mcpServers.actions.edit')}
-                  >
-                    <Edit3 className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    onClick={() => onDelete(serverId)}
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-600 hover:text-red-700"
-                    title={t('mcpServers.actions.delete')}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        {servers.length === 0 && (
-          <div className="py-8 text-center text-muted-foreground">{t('mcpServers.empty')}</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 type CodexMcpServersProps = {
   agent: 'codex';
   servers: McpServer[];
@@ -366,15 +286,11 @@ function CodexMcpServers({ servers, onAdd, onEdit, onDelete, deleteError }: Omit
   );
 }
 
-type McpServersContentProps = ClaudeMcpServersProps | CursorMcpServersProps | CodexMcpServersProps;
+type McpServersContentProps = ClaudeMcpServersProps | CodexMcpServersProps;
 
 export default function McpServersContent(props: McpServersContentProps) {
   if (props.agent === 'claude') {
     return <ClaudeMcpServers {...props} />;
-  }
-
-  if (props.agent === 'cursor') {
-    return <CursorMcpServers {...props} />;
   }
 
   return <CodexMcpServers {...props} />;

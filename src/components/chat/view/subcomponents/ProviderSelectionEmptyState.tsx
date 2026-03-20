@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import SessionProviderLogo from "../../../llm-logo-provider/SessionProviderLogo";
 import {
   CLAUDE_MODELS,
-  CURSOR_MODELS,
   CODEX_MODELS,
   GEMINI_MODELS,
 } from "../../../../../shared/modelConstants";
@@ -19,8 +18,6 @@ type ProviderSelectionEmptyStateProps = {
   textareaRef: React.RefObject<HTMLTextAreaElement>;
   claudeModel: string;
   setClaudeModel: (model: string) => void;
-  cursorModel: string;
-  setCursorModel: (model: string) => void;
   codexModel: string;
   setCodexModel: (model: string) => void;
   geminiModel: string;
@@ -50,14 +47,6 @@ const PROVIDERS: ProviderDef[] = [
     check: "bg-primary text-primary-foreground",
   },
   {
-    id: "cursor",
-    name: "Cursor",
-    infoKey: "providerSelection.providerInfo.cursorEditor",
-    accent: "border-violet-500 dark:border-violet-400",
-    ring: "ring-violet-500/15",
-    check: "bg-violet-500 text-white",
-  },
-  {
     id: "codex",
     name: "Codex",
     infoKey: "providerSelection.providerInfo.openai",
@@ -79,20 +68,18 @@ function getModelConfig(p: SessionProvider) {
   if (p === "claude") return CLAUDE_MODELS;
   if (p === "codex") return CODEX_MODELS;
   if (p === "gemini") return GEMINI_MODELS;
-  return CURSOR_MODELS;
+  return CLAUDE_MODELS;
 }
 
 function getModelValue(
   p: SessionProvider,
   c: string,
-  cu: string,
   co: string,
   g: string,
 ) {
   if (p === "claude") return c;
   if (p === "codex") return co;
-  if (p === "gemini") return g;
-  return cu;
+  return g;
 }
 
 export default function ProviderSelectionEmptyState({
@@ -103,8 +90,6 @@ export default function ProviderSelectionEmptyState({
   textareaRef,
   claudeModel,
   setClaudeModel,
-  cursorModel,
-  setCursorModel,
   codexModel,
   setCodexModel,
   geminiModel,
@@ -135,9 +120,6 @@ export default function ProviderSelectionEmptyState({
     } else if (provider === "gemini") {
       setGeminiModel(value);
       localStorage.setItem("gemini-model", value);
-    } else {
-      setCursorModel(value);
-      localStorage.setItem("cursor-model", value);
     }
   };
 
@@ -145,7 +127,6 @@ export default function ProviderSelectionEmptyState({
   const currentModel = getModelValue(
     provider,
     claudeModel,
-    cursorModel,
     codexModel,
     geminiModel,
   );
@@ -241,9 +222,6 @@ export default function ProviderSelectionEmptyState({
                 {
                   claude: t("providerSelection.readyPrompt.claude", {
                     model: claudeModel,
-                  }),
-                  cursor: t("providerSelection.readyPrompt.cursor", {
-                    model: cursorModel,
                   }),
                   codex: t("providerSelection.readyPrompt.codex", {
                     model: codexModel,

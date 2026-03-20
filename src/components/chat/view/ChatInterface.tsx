@@ -28,12 +28,6 @@ const CHAT_REALTIME_MESSAGE_TYPES = new Set([
   'claude-permission-request',
   'claude-permission-cancelled',
   'claude-error',
-  'cursor-system',
-  'cursor-user',
-  'cursor-tool-use',
-  'cursor-error',
-  'cursor-result',
-  'cursor-output',
   'claude-complete',
   'codex-response',
   'codex-approval-request',
@@ -115,8 +109,6 @@ function ChatInterface({
   const {
     provider,
     setProvider,
-    cursorModel,
-    setCursorModel,
     claudeModel,
     setClaudeModel,
     codexModel,
@@ -251,7 +243,6 @@ function ChatInterface({
     codexInteractionMode,
     codexApprovalPolicy,
     cyclePermissionMode,
-    cursorModel,
     claudeModel,
     codexModel,
     codexReasoningEffort,
@@ -428,13 +419,11 @@ function ChatInterface({
 
   if (!selectedProject) {
     const selectedProviderLabel =
-      provider === 'cursor'
-        ? t('messageTypes.cursor')
-        : provider === 'codex'
-          ? t('messageTypes.codex')
-          : provider === 'gemini'
-            ? t('messageTypes.gemini')
-            : t('messageTypes.claude');
+      provider === 'codex'
+        ? t('messageTypes.codex')
+        : provider === 'gemini'
+          ? t('messageTypes.gemini')
+          : t('messageTypes.claude');
 
     return (
       <div className="flex h-full items-center justify-center">
@@ -467,8 +456,6 @@ function ChatInterface({
           textareaRef={textareaRef}
           claudeModel={claudeModel}
           setClaudeModel={setClaudeModel}
-          cursorModel={cursorModel}
-          setCursorModel={setCursorModel}
           codexModel={codexModel}
           setCodexModel={setCodexModel}
           geminiModel={geminiModel}
@@ -565,13 +552,11 @@ function ChatInterface({
           isInputFocused={isInputFocused}
           placeholder={t('input.placeholder', {
             provider:
-              provider === 'cursor'
-                ? t('messageTypes.cursor')
-                : provider === 'codex'
-                  ? t('messageTypes.codex')
-                  : provider === 'gemini'
-                    ? t('messageTypes.gemini')
-                    : t('messageTypes.claude'),
+              provider === 'codex'
+                ? t('messageTypes.codex')
+                : provider === 'gemini'
+                  ? t('messageTypes.gemini')
+                  : t('messageTypes.claude'),
           })}
           isTextareaExpanded={isTextareaExpanded}
           sendByCtrlEnter={sendByCtrlEnter}

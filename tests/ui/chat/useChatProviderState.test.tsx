@@ -124,27 +124,4 @@ describe('useChatProviderState', () => {
       expect(result.current.pendingPermissionRequests).toEqual([]);
     });
   });
-
-  it('hydrates the cursor model from the server when it is not already stored locally', async () => {
-    localStorage.setItem('selected-provider', 'cursor');
-    providerStateMocks.authenticatedFetch.mockResolvedValue({
-      json: async () => ({
-        success: true,
-        config: {
-          model: {
-            modelId: 'cursor-server-model',
-          },
-        },
-      }),
-    });
-
-    const { result } = renderHook(() => useChatProviderState({
-      selectedSession: { id: 'cursor-session', __provider: 'cursor' } as any,
-    }));
-
-    await waitFor(() => {
-      expect(providerStateMocks.authenticatedFetch).toHaveBeenCalledWith('/api/cursor/config');
-      expect(result.current.cursorModel).toBe('cursor-server-model');
-    });
-  });
 });

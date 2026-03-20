@@ -2,7 +2,7 @@
  * PROJECT DISCOVERY AND MANAGEMENT SYSTEM
  * ========================================
  * 
- * This module manages project discovery for both Claude CLI and Cursor CLI sessions.
+ * This module manages project discovery for Claude CLI sessions.
  * 
  * ## Architecture Overview
  * 
@@ -11,12 +11,6 @@
  *    - Contains .jsonl files with conversation history including 'cwd' field
  *    - Project metadata stored in ~/.claude/project-config.json
  * 
- * 2. **Cursor Projects** (stored in ~/.cursor/chats/)
- *    - Each project directory is named with MD5 hash of the absolute project path
- *    - Example: /Users/john/myproject -> MD5 -> a1b2c3d4e5f6...
- *    - Contains session directories with SQLite databases (store.db)
- *    - Project path is NOT stored in the database - only in the MD5 hash
- * 
  * ## Project Discovery Strategy
  * 
  * 1. **Claude Projects Discovery**:
@@ -24,25 +18,9 @@
  *    - Extract actual project path from .jsonl files (cwd field)
  *    - Fall back to decoded directory name if no sessions exist
  * 
- * 2. **Cursor Sessions Discovery**:
- *    - For each KNOWN project (from Claude or manually added)
- *    - Compute MD5 hash of the project's absolute path
- *    - Check if ~/.cursor/chats/{md5_hash}/ directory exists
- *    - Read session metadata from SQLite store.db files
- * 
- * 3. **Manual Project Addition**:
+ * 2. **Manual Project Addition**:
  *    - Users can manually add project paths via UI
  *    - Stored in ~/.claude/project-config.json with 'manuallyAdded' flag
- *    - Allows discovering Cursor sessions for projects without Claude sessions
- * 
- * ## Critical Limitations
- * 
- * - **CANNOT discover Cursor-only projects**: From a quick check, there was no mention of
- *   the cwd of each project. if someone has the time, you can try to reverse engineer it.
- * 
- * - **Project relocation breaks history**: If a project directory is moved or renamed,
- *   the MD5 hash changes, making old Cursor sessions inaccessible unless the old
- *   path is known and manually added.
  * 
  * ## Error Handling
  * 
@@ -468,42 +446,10 @@ async function getClaudeProjectLastActivity(projectName) {
   }
 }
 
-async function getCursorProjectLastActivity(projectPath) {
-  if (!normalizeComparablePath(projectPath)) {
-    return null;
-  }
-
-  const cwdId = crypto.createHash('md5').update(projectPath).digest('hex');
-  const cursorChatsPath = path.join(os.homedir(), '.cursor', 'chats', cwdId);
-
-  try {
-    const sessionDirs = await fs.readdir(cursorChatsPath);
-    if (sessionDirs.length === 0) {
-      return null;
-    }
-
-    const timestamps = await Promise.all(
-      sessionDirs.map(async (sessionId) => {
-        try {
-          const stats = await fs.stat(path.join(cursorChatsPath, sessionId, 'store.db'));
-          return stats.mtimeMs;
-        } catch {
-          return 0;
-        }
-      })
-    );
-
-    return toIsoTimestamp(getLatestTimestamp(timestamps));
-  } catch {
-    return null;
-  }
-}
-
 async function getProjectLastActivity(projectName, projectPath, options = {}) {
   const { codexIndexRef = null, geminiIndexRef = null } = options;
   const timestamps = await Promise.all([
     getClaudeProjectLastActivity(projectName),
-    getCursorProjectLastActivity(projectPath),
     getCodexProjectLastActivity(projectPath, codexIndexRef),
     getGeminiProjectLastActivity(projectPath, geminiIndexRef),
   ]);
@@ -577,7 +523,6 @@ async function buildProjects(progressCallback = null, options = {}) {
         lastActivity,
         ...(lightweight ? {} : {
           sessions: [],
-          cursorSessions: [],
           codexSessions: [],
           geminiSessions: [],
           sessionMeta: {
@@ -604,15 +549,6 @@ async function buildProjects(progressCallback = null, options = {}) {
           };
         }
         applyCustomSessionNames(project.sessions, 'claude');
-
-        // Also fetch Cursor sessions for this project
-        try {
-          project.cursorSessions = await getCursorSessions(actualProjectDir);
-        } catch (e) {
-          console.warn(`Could not load Cursor sessions for project ${entry.name}:`, e.message);
-          project.cursorSessions = [];
-        }
-        applyCustomSessionNames(project.cursorSessions, 'cursor');
 
         // Also fetch Codex sessions for this project
         try {
@@ -720,7 +656,6 @@ async function buildProjects(progressCallback = null, options = {}) {
             hasMore: false,
             total: 0
           },
-          cursorSessions: [],
           codexSessions: []
         })
       };
@@ -741,14 +676,6 @@ async function buildProjects(progressCallback = null, options = {}) {
           };
         }
         applyCustomSessionNames(project.sessions, 'claude');
-
-        // Try to fetch Cursor sessions for manual projects too
-        try {
-          project.cursorSessions = await getCursorSessions(actualProjectDir);
-        } catch (e) {
-          console.warn(`Could not load Cursor sessions for manual project ${projectName}:`, e.message);
-        }
-        applyCustomSessionNames(project.cursorSessions, 'cursor');
 
         // Try to fetch Codex sessions for manual projects too
         try {
@@ -1408,14 +1335,6 @@ async function deleteProject(projectName, force = false) {
         console.warn('Failed to delete Codex sessions:', err.message);
       }
 
-      // Delete Cursor sessions directory if it exists
-      try {
-        const hash = crypto.createHash('md5').update(projectPath).digest('hex');
-        const cursorProjectDir = path.join(os.homedir(), '.cursor', 'chats', hash);
-        await fs.rm(cursorProjectDir, { recursive: true, force: true });
-      } catch (err) {
-        // Cursor dir may not exist, ignore
-      }
     }
 
     // Remove from project config
@@ -1452,7 +1371,7 @@ async function addProjectManually(projectPath, displayName = null) {
   }
 
   // Allow adding projects even if the directory exists - this enables tracking
-  // existing Claude Code or Cursor projects in the UI
+  // existing Claude Code projects in the UI
 
   // Add to config as manually added project
   config[projectName] = {
@@ -1474,114 +1393,10 @@ async function addProjectManually(projectPath, displayName = null) {
     displayName: displayName || await generateDisplayName(projectName, absolutePath),
     lastActivity: null,
     isManuallyAdded: true,
-    sessions: [],
-    cursorSessions: []
+    sessions: []
   };
 }
 
-// Fetch Cursor sessions for a given project path
-async function getCursorSessions(projectPath) {
-  try {
-    // Calculate cwdID hash for the project path (Cursor uses MD5 hash)
-    const cwdId = crypto.createHash('md5').update(projectPath).digest('hex');
-    const cursorChatsPath = path.join(os.homedir(), '.cursor', 'chats', cwdId);
-
-    // Check if the directory exists
-    try {
-      await fs.access(cursorChatsPath);
-    } catch (error) {
-      // No sessions for this project
-      return [];
-    }
-
-    // List all session directories
-    const sessionDirs = await fs.readdir(cursorChatsPath);
-    const sessions = [];
-
-    for (const sessionId of sessionDirs) {
-      const sessionPath = path.join(cursorChatsPath, sessionId);
-      const storeDbPath = path.join(sessionPath, 'store.db');
-
-      let db;
-      try {
-        await fs.access(storeDbPath);
-
-        let dbStatMtimeMs = null;
-        try {
-          const stat = await fs.stat(storeDbPath);
-          dbStatMtimeMs = stat.mtimeMs;
-        } catch (_) {}
-
-        db = await open({
-          filename: storeDbPath,
-          driver: sqlite3.Database,
-          mode: sqlite3.OPEN_READONLY
-        });
-
-        try {
-          const metaRows = await db.all(`
-            SELECT key, value FROM meta
-          `);
-
-          let metadata = {};
-          for (const row of metaRows) {
-            if (row.value) {
-              try {
-                const hexMatch = row.value.toString().match(/^[0-9a-fA-F]+$/);
-                if (hexMatch) {
-                  const jsonStr = Buffer.from(row.value, 'hex').toString('utf8');
-                  metadata[row.key] = JSON.parse(jsonStr);
-                } else {
-                  metadata[row.key] = row.value.toString();
-                }
-              } catch (e) {
-                metadata[row.key] = row.value.toString();
-              }
-            }
-          }
-
-          const messageCountResult = await db.get(`
-            SELECT COUNT(*) as count FROM blobs
-          `);
-
-          const sessionName = metadata.title || metadata.sessionTitle || 'Untitled Session';
-
-          let createdAt = null;
-          if (metadata.createdAt) {
-            createdAt = new Date(metadata.createdAt).toISOString();
-          } else if (dbStatMtimeMs) {
-            createdAt = new Date(dbStatMtimeMs).toISOString();
-          } else {
-            createdAt = new Date().toISOString();
-          }
-
-          sessions.push({
-            id: sessionId,
-            name: sessionName,
-            createdAt: createdAt,
-            lastActivity: createdAt,
-            messageCount: messageCountResult.count || 0,
-            projectPath: projectPath
-          });
-        } finally {
-          if (db) await db.close().catch(() => {});
-        }
-      } catch (error) {
-        console.warn(`Could not read Cursor session ${sessionId}:`, error.message);
-      }
-    }
-
-    // Sort sessions by creation time (newest first)
-    sessions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    // Return only the first 5 sessions for performance
-    return sessions.slice(0, 5);
-
-  } catch (error) {
-    console.error('Error fetching Cursor sessions:', error);
-    return [];
-  }
-}
 
 
 function normalizeComparablePath(inputPath) {

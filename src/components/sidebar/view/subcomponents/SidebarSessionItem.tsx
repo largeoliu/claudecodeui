@@ -119,17 +119,15 @@ export default function SidebarSessionItem({
               </div>
             </div>
 
-            {!sessionView.isCursorSession && (
-              <button
-                className="ml-1 flex h-5 w-5 items-center justify-center rounded-md bg-red-50 opacity-70 transition-transform active:scale-95 dark:bg-red-900/20"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  requestDeleteSession();
-                }}
-              >
-                <Trash2 className="h-2.5 w-2.5 text-red-600 dark:text-red-400" />
-              </button>
-            )}
+            <button
+              className="ml-1 flex h-5 w-5 items-center justify-center rounded-md bg-red-50 opacity-70 transition-transform active:scale-95 dark:bg-red-900/20"
+              onClick={(event) => {
+                event.stopPropagation();
+                requestDeleteSession();
+              }}
+            >
+              <Trash2 className="h-2.5 w-2.5 text-red-600 dark:text-red-400" />
+            </button>
           </div>
         </div>
       </div>
@@ -226,18 +224,16 @@ export default function SidebarSessionItem({
                 >
                   <Edit2 className="h-3 w-3 text-gray-600 dark:text-gray-400" />
                 </button>
-                {!sessionView.isCursorSession && (
-                  <button
-                    className="flex h-6 w-6 items-center justify-center rounded bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      requestDeleteSession();
-                    }}
-                    title={t('tooltips.deleteSession')}
-                  >
-                    <Trash2 className="h-3 w-3 text-red-600 dark:text-red-400" />
-                  </button>
-                )}
+                <button
+                  className="flex h-6 w-6 items-center justify-center rounded bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    requestDeleteSession();
+                  }}
+                  title={t('tooltips.deleteSession')}
+                >
+                  <Trash2 className="h-3 w-3 text-red-600 dark:text-red-400" />
+                </button>
               </>
             )}
           </div>

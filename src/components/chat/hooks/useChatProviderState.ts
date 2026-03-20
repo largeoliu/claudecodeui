@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../../../utils/api';
-import { CLAUDE_MODELS, CODEX_MODELS, CURSOR_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
+import { CLAUDE_MODELS, CODEX_MODELS, GEMINI_MODELS } from '../../../../shared/modelConstants';
 import type {
   CodexApprovalPolicy,
   CodexInteractionMode,
@@ -87,9 +87,6 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   ));
   const [codexReasoningEffort, setCodexReasoningEffort] = useState<CodexReasoningEffort>(getDefaultCodexReasoningEffort);
   const [pendingPermissionRequests, setPendingPermissionRequests] = useState<PendingPermissionRequest[]>([]);
-  const [cursorModel, setCursorModel] = useState<string>(() => (
-    localStorage.getItem('cursor-model') || CURSOR_MODELS.DEFAULT
-  ));
   const [claudeModel, setClaudeModel] = useState<string>(() => (
     localStorage.getItem('claude-model') || CLAUDE_MODELS.DEFAULT
   ));
@@ -157,28 +154,6 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   }, [selectedSession?.id]);
 
   useEffect(() => {
-    if (provider !== 'cursor') {
-      return;
-    }
-
-    authenticatedFetch('/api/cursor/config')
-      .then((response) => response.json())
-      .then((data) => {
-        if (!data.success || !data.config?.model?.modelId) {
-          return;
-        }
-
-        const modelId = data.config.model.modelId as string;
-        if (!localStorage.getItem('cursor-model')) {
-          setCursorModel(modelId);
-        }
-      })
-      .catch((error) => {
-        console.error('Error loading Cursor config:', error);
-      });
-  }, [provider]);
-
-  useEffect(() => {
     if (!hasPersistedCodexReasoningRef.current) {
       hasPersistedCodexReasoningRef.current = true;
       return;
@@ -230,8 +205,6 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   return {
     provider,
     setProvider,
-    cursorModel,
-    setCursorModel,
     claudeModel,
     setClaudeModel,
     codexModel,

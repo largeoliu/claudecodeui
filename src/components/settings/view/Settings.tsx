@@ -31,14 +31,11 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
     setClaudePermissions,
     notificationPreferences,
     setNotificationPreferences,
-    cursorPermissions,
-    setCursorPermissions,
     codexInteractionMode,
     setCodexInteractionMode,
     codexApprovalPolicy,
     setCodexApprovalPolicy,
     mcpServers,
-    cursorMcpServers,
     codexMcpServers,
     mcpTestResults,
     mcpServerTools,
@@ -58,7 +55,6 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
     submitCodexMcpForm,
     handleCodexMcpDelete,
     claudeAuthStatus,
-    cursorAuthStatus,
     codexAuthStatus,
     geminiAuthStatus,
     geminiPermissionMode,
@@ -108,9 +104,7 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
 
   const isAuthenticated = loginProvider === 'claude'
     ? claudeAuthStatus.authenticated
-    : loginProvider === 'cursor'
-      ? cursorAuthStatus.authenticated
-      : loginProvider === 'codex'
+    : loginProvider === 'codex'
         ? codexAuthStatus.authenticated
         : false;
 
@@ -160,17 +154,13 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
               {activeTab === 'agents' && (
                 <AgentsSettingsTab
                   claudeAuthStatus={claudeAuthStatus}
-                  cursorAuthStatus={cursorAuthStatus}
                   codexAuthStatus={codexAuthStatus}
                   geminiAuthStatus={geminiAuthStatus}
                   onClaudeLogin={() => openLoginForProvider('claude')}
-                  onCursorLogin={() => openLoginForProvider('cursor')}
                   onCodexLogin={() => openLoginForProvider('codex')}
                   onGeminiLogin={() => openLoginForProvider('gemini')}
                   claudePermissions={claudePermissions}
                   onClaudePermissionsChange={setClaudePermissions}
-                  cursorPermissions={cursorPermissions}
-                  onCursorPermissionsChange={setCursorPermissions}
                   codexInteractionMode={codexInteractionMode}
                   onCodexInteractionModeChange={setCodexInteractionMode}
                   codexApprovalPolicy={codexApprovalPolicy}
@@ -178,7 +168,6 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
                   geminiPermissionMode={geminiPermissionMode}
                   onGeminiPermissionModeChange={setGeminiPermissionMode}
                   mcpServers={mcpServers}
-                  cursorMcpServers={cursorMcpServers}
                   codexMcpServers={codexMcpServers}
                   mcpTestResults={mcpTestResults}
                   mcpServerTools={mcpServerTools}

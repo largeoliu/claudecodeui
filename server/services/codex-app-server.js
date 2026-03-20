@@ -611,6 +611,7 @@ class CodexAppServer {
     this.loadedThreads = new Set();
     this.pendingUiRequests = new Map();
     this.pendingUiRequestsByThread = new Map();
+    this.pendingUiResponseAcks = new Map();
     this.threadTokenUsage = new Map();
     this.threadCollaborationModes = new Map();
     this.threadTurnSettings = new Map();
@@ -698,6 +699,7 @@ class CodexAppServer {
     this.loadedThreads.clear();
     this.pendingUiRequests.clear();
     this.pendingUiRequestsByThread.clear();
+    this.pendingUiResponseAcks.clear();
     this.threadWriters.clear();
     this.threadCollaborationModes.clear();
     this.threadTurnSettings.clear();
@@ -772,11 +774,12 @@ class CodexAppServer {
   }
 
   async handleServerRequest(message) {
-    const requestId = String(message.id);
+    const rawRequestId = message.id;
+    const requestId = String(rawRequestId);
     const { method, params = {} } = message;
 
     if (method === 'item/tool/call') {
-      this.sendResponse(requestId, {
+      this.sendResponse(rawRequestId, {
         success: false,
         contentItems: [{ type: 'inputText', text: 'Dynamic tool calls are not supported in CloudCLI UI.' }],
       });
@@ -784,7 +787,7 @@ class CodexAppServer {
     }
 
     if (method === 'account/chatgptAuthTokens/refresh') {
-      this.sendJsonRpcError(requestId, 'ChatGPT auth token refresh is not supported in CloudCLI UI.');
+      this.sendJsonRpcError(rawRequestId, 'ChatGPT auth token refresh is not supported in CloudCLI UI.');
       return;
     }
 
@@ -804,6 +807,7 @@ class CodexAppServer {
 
       this.storePendingUiRequest(pendingRequest, {
         method,
+        rpcRequestId: rawRequestId,
         threadId: params.threadId,
         turnId: params.turnId,
         itemId: params.itemId,
@@ -827,6 +831,7 @@ class CodexAppServer {
 
       this.storePendingUiRequest(pendingRequest, {
         method,
+        rpcRequestId: rawRequestId,
         threadId: params.threadId || params.conversationId,
         turnId: params.turnId || null,
         itemId: params.itemId || params.callId || null,
@@ -840,13 +845,18 @@ class CodexAppServer {
       return;
     }
 
-    this.sendJsonRpcError(requestId, `Unsupported server request: ${method}`);
+    this.sendJsonRpcError(rawRequestId, `Unsupported server request: ${method}`);
   }
 
   handleNotification(message) {
     const { method, params = {} } = message;
 
     if (method.startsWith('codex/event/')) {
+      return;
+    }
+
+    if (method === 'serverRequest/resolved') {
+      this.acknowledgeInteractiveResponse(params.threadId, params.requestId);
       return;
     }
 
@@ -870,6 +880,8 @@ class CodexAppServer {
       this.threadTurnSettings.delete(params.threadId);
       this.threadTokenUsage.delete(params.threadId);
     }
+
+    this.acknowledgeInteractiveResponsesForNotification(params);
 
     if (method === 'thread/tokenUsage/updated') {
       const normalized = normalizeThreadTokenUsage(params.tokenUsage);
@@ -1013,6 +1025,76 @@ class CodexAppServer {
     }
 
     this.pendingUiRequestsByThread.get(request.sessionId).set(request.requestId, storedRequest);
+  }
+
+  trackPendingUiResponseAck(pending) {
+    const rpcRequestId = pending?.metadata?.rpcRequestId;
+    if (rpcRequestId === undefined || rpcRequestId === null) {
+      return;
+    }
+
+    this.pendingUiResponseAcks.set(String(rpcRequestId), {
+      requestId: pending.requestId,
+      sessionId: pending.sessionId,
+      turnId: pending.metadata?.turnId || null,
+      requestKind: pending.requestKind,
+      toolName: pending.toolName,
+      rpcRequestId,
+    });
+  }
+
+  acknowledgeInteractiveResponse(threadId, rpcRequestId) {
+    const ackKey = rpcRequestId === undefined || rpcRequestId === null ? null : String(rpcRequestId);
+    if (!ackKey) {
+      return false;
+    }
+
+    const pendingAck = this.pendingUiResponseAcks.get(ackKey);
+    if (!pendingAck) {
+      return false;
+    }
+
+    this.pendingUiResponseAcks.delete(ackKey);
+    this.broadcastToThread(threadId || pendingAck.sessionId, {
+      type: 'codex-interactive-response-ack',
+      requestId: pendingAck.requestId,
+      sessionId: pendingAck.sessionId,
+      requestKind: pendingAck.requestKind,
+      toolName: pendingAck.toolName,
+    });
+    return true;
+  }
+
+  acknowledgeInteractiveResponsesForNotification(params) {
+    const threadId = params?.threadId || params?.thread?.id || null;
+    const turnId = params?.turnId || params?.turn?.id || null;
+    if (!threadId || !turnId || this.pendingUiResponseAcks.size === 0) {
+      return false;
+    }
+
+    let acknowledged = false;
+
+    for (const [ackKey, pendingAck] of Array.from(this.pendingUiResponseAcks.entries())) {
+      if (pendingAck.sessionId !== threadId) {
+        continue;
+      }
+
+      if (pendingAck.turnId && pendingAck.turnId !== turnId) {
+        continue;
+      }
+
+      this.pendingUiResponseAcks.delete(ackKey);
+      this.broadcastToThread(threadId, {
+        type: 'codex-interactive-response-ack',
+        requestId: pendingAck.requestId,
+        sessionId: pendingAck.sessionId,
+        requestKind: pendingAck.requestKind,
+        toolName: pendingAck.toolName,
+      });
+      acknowledged = true;
+    }
+
+    return acknowledged;
   }
 
   clearPendingUiRequests(threadId, options = {}) {
@@ -1438,6 +1520,7 @@ class CodexAppServer {
     }
 
     const { metadata } = pending;
+    const responseId = metadata?.rpcRequestId ?? requestId;
     const allow = Boolean(decision.allow);
     const allowForSession = Boolean(decision.allowForSession || decision.rememberEntry);
     let result;
@@ -1448,25 +1531,26 @@ class CodexAppServer {
           ? (allowForSession ? 'acceptForSession' : 'accept')
           : 'decline',
       };
-      this.sendResponse(requestId, result);
+      this.sendResponse(responseId, result);
     } else if (metadata.method === 'item/fileChange/requestApproval') {
       result = {
         decision: allow
           ? (allowForSession ? 'acceptForSession' : 'accept')
           : 'decline',
       };
-      this.sendResponse(requestId, result);
+      this.sendResponse(responseId, result);
     } else if (metadata.method === 'applyPatchApproval' || metadata.method === 'execCommandApproval') {
       result = {
         decision: allow
           ? (allowForSession ? 'approved_for_session' : 'approved')
           : 'denied',
       };
-      this.sendResponse(requestId, result);
+      this.sendResponse(responseId, result);
     } else {
       return buildInteractiveResponseError(requestId, 'Unsupported approval request.', 'unsupported_request', pending);
     }
 
+    this.trackPendingUiResponseAck(pending);
     this.deletePendingRequest(requestId, pending.sessionId);
     return buildInteractiveResponseResult(pending);
   }
@@ -1476,6 +1560,8 @@ class CodexAppServer {
     if (!pending || pending.requestKind !== 'user-input') {
       return buildInteractiveResponseError(requestId, 'Request is no longer waiting for user input.', 'not_found', pending);
     }
+
+    const responseId = pending.metadata?.rpcRequestId ?? requestId;
 
     const normalizedAnswers = {};
     for (const [key, value] of Object.entries(answers || {})) {
@@ -1488,10 +1574,11 @@ class CodexAppServer {
       }
     }
 
-    this.sendResponse(requestId, {
+    this.sendResponse(responseId, {
       answers: normalizedAnswers,
     });
 
+    this.trackPendingUiResponseAck(pending);
     this.deletePendingRequest(requestId, pending.sessionId);
     return buildInteractiveResponseResult(pending);
   }

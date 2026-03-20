@@ -38,6 +38,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import os from 'os';
 import http from 'http';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { promises as fsPromises } from 'fs';
 import { spawn } from 'child_process';
 import pty from 'node-pty';
@@ -82,8 +84,10 @@ import { startEnabledPluginServers, stopAllPlugins } from './utils/plugin-proces
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
 import { configureWebPush } from './services/vapid-keys.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
+import { errorHandler } from './middleware/error-handler.js';
 import { IS_PLATFORM } from './constants/config.js';
 import { getConnectableHost } from '../shared/networkHosts.js';
+import { createRequestAbortController, runCommand } from './utils/process-runner.js';
 
 const VALID_PROVIDERS = ['claude', 'codex', 'gemini'];
 
@@ -233,9 +237,23 @@ async function setupProjectsWatcher() {
 const app = express();
 const server = http.createServer(app);
 
+const HTTP_REQUEST_TIMEOUT_MS = parseInt(process.env.HTTP_REQUEST_TIMEOUT_MS, 10) || 120_000;
+const HTTP_HEADERS_TIMEOUT_MS = parseInt(process.env.HTTP_HEADERS_TIMEOUT_MS, 10) || 60_000;
+const HTTP_KEEP_ALIVE_TIMEOUT_MS = parseInt(process.env.HTTP_KEEP_ALIVE_TIMEOUT_MS, 10) || 5_000;
+const HTTP_MAX_REQUESTS_PER_SOCKET = parseInt(process.env.HTTP_MAX_REQUESTS_PER_SOCKET, 10) || 100;
+
+server.requestTimeout = HTTP_REQUEST_TIMEOUT_MS;
+server.headersTimeout = HTTP_HEADERS_TIMEOUT_MS;
+server.keepAliveTimeout = HTTP_KEEP_ALIVE_TIMEOUT_MS;
+server.maxRequestsPerSocket = HTTP_MAX_REQUESTS_PER_SOCKET;
+
 const ptySessionsMap = new Map();
 const PTY_SESSION_TIMEOUT = 30 * 60 * 1000;
+const PTY_BUFFER_LIMIT_BYTES = parseInt(process.env.PTY_BUFFER_LIMIT_BYTES, 10) || 512 * 1024;
+const MAX_PTY_SESSIONS = parseInt(process.env.MAX_PTY_SESSIONS, 10) || 20;
 const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;
+const WS_HEARTBEAT_INTERVAL_MS = parseInt(process.env.WS_HEARTBEAT_INTERVAL_MS, 10) || 30_000;
+const TRANSCRIBE_MAX_FILE_SIZE = parseInt(process.env.TRANSCRIBE_MAX_FILE_SIZE, 10) || 25 * 1024 * 1024;
 const ANSI_ESCAPE_SEQUENCE_REGEX = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g;
 const TRAILING_URL_PUNCTUATION_REGEX = /[)\]}>.,;:!?]+$/;
 
@@ -337,8 +355,45 @@ const wss = new WebSocketServer({
     }
 });
 
+const wsHeartbeatInterval = setInterval(() => {
+    wss.clients.forEach((client) => {
+        if (client.isAlive === false) {
+            client.terminate();
+            return;
+        }
+
+        client.isAlive = false;
+        try {
+            client.ping();
+        } catch {
+            client.terminate();
+        }
+    });
+}, WS_HEARTBEAT_INTERVAL_MS);
+
+if (typeof wsHeartbeatInterval.unref === 'function') {
+    wsHeartbeatInterval.unref();
+}
+
+server.on('close', () => {
+    clearInterval(wsHeartbeatInterval);
+});
+
 // Make WebSocket server available to routes
 app.locals.wss = wss;
+
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+}));
+
+const apiLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests. Please try again shortly.' },
+});
 
 app.use(cors({ exposedHeaders: ['X-Refreshed-Token'] }));
 app.use(express.json({
@@ -364,6 +419,7 @@ app.get('/health', (req, res) => {
 });
 
 // Optional API key validation (if configured)
+app.use('/api', apiLimiter);
 app.use('/api', validateApiKey);
 
 // Authentication routes (public)
@@ -436,6 +492,7 @@ app.post('/api/system/update', authenticateToken, async (req, res) => {
     try {
         // Get the project root directory (parent of server directory)
         const projectRoot = path.join(__dirname, '..');
+        const requestAbort = createRequestAbortController(req, res);
 
         console.log('Starting system update from directory:', projectRoot);
 
@@ -444,50 +501,24 @@ app.post('/api/system/update', authenticateToken, async (req, res) => {
             ? 'git checkout main && git pull && npm install'
             : 'npm install -g @siteboon/claude-code-ui@latest';
 
-        const child = spawn('sh', ['-c', updateCommand], {
-            cwd: installMode === 'git' ? projectRoot : os.homedir(),
-            env: process.env
-        });
-
-        let output = '';
-        let errorOutput = '';
-
-        child.stdout.on('data', (data) => {
-            const text = data.toString();
-            output += text;
-            console.log('Update output:', text);
-        });
-
-        child.stderr.on('data', (data) => {
-            const text = data.toString();
-            errorOutput += text;
-            console.error('Update error:', text);
-        });
-
-        child.on('close', (code) => {
-            if (code === 0) {
-                res.json({
-                    success: true,
-                    output: output || 'Update completed successfully',
-                    message: 'Update completed. Please restart the server to apply changes.'
-                });
-            } else {
-                res.status(500).json({
-                    success: false,
-                    error: 'Update command failed',
-                    output: output,
-                    errorOutput: errorOutput
-                });
-            }
-        });
-
-        child.on('error', (error) => {
-            console.error('Update process error:', error);
-            res.status(500).json({
-                success: false,
-                error: error.message
+        try {
+            const result = await runCommand('sh', ['-c', updateCommand], {
+                cwd: installMode === 'git' ? projectRoot : os.homedir(),
+                timeoutMs: 10 * 60_000,
+                maxStdoutBytes: 512 * 1024,
+                maxStderrBytes: 512 * 1024,
+                signal: requestAbort.signal,
             });
-        });
+
+            res.json({
+                success: true,
+                output: result.stdout || 'Update completed successfully',
+                message: 'Update completed. Please restart the server to apply changes.',
+                truncated: result.stdoutTruncated || result.stderrTruncated,
+            });
+        } finally {
+            requestAbort.cleanup();
+        }
 
     } catch (error) {
         console.error('System update error:', error);
@@ -1408,6 +1439,10 @@ app.post('/api/projects/:projectName/files/upload', authenticateToken, uploadFil
 wss.on('connection', (ws, request) => {
     const url = request.url;
     console.log('[INFO] Client connected to:', url);
+    ws.isAlive = true;
+    ws.on('pong', () => {
+        ws.isAlive = true;
+    });
 
     // Parse URL to get pathname without query parameters
     const urlObj = new URL(url, 'http://localhost');
@@ -1533,19 +1568,16 @@ function handleChatConnection(ws, request) {
                             rememberEntry: data.rememberEntry
                         });
 
-                        writer.send(result?.ok ? {
-                            type: 'codex-interactive-response-ack',
-                            requestId: data.requestId,
-                            sessionId: result.sessionId,
-                            requestKind: result.requestKind,
-                        } : {
-                            type: 'codex-interactive-response-error',
-                            requestId: data.requestId,
-                            sessionId: result?.sessionId || null,
-                            requestKind: result?.requestKind || 'approval',
-                            code: result?.code || 'response_failed',
-                            error: result?.error || 'Codex approval response was rejected.',
-                        });
+                        if (!result?.ok) {
+                            writer.send({
+                                type: 'codex-interactive-response-error',
+                                requestId: data.requestId,
+                                sessionId: result?.sessionId || null,
+                                requestKind: result?.requestKind || 'approval',
+                                code: result?.code || 'response_failed',
+                                error: result?.error || 'Codex approval response was rejected.',
+                            });
+                        }
                     } catch (error) {
                         console.error('[Codex] Failed to process approval response:', error);
                         writer.send({
@@ -1568,19 +1600,16 @@ function handleChatConnection(ws, request) {
                     try {
                         const result = await respondToCodexUserInput(data.requestId, data.answers || {});
 
-                        writer.send(result?.ok ? {
-                            type: 'codex-interactive-response-ack',
-                            requestId: data.requestId,
-                            sessionId: result.sessionId,
-                            requestKind: result.requestKind,
-                        } : {
-                            type: 'codex-interactive-response-error',
-                            requestId: data.requestId,
-                            sessionId: result?.sessionId || null,
-                            requestKind: result?.requestKind || 'user-input',
-                            code: result?.code || 'response_failed',
-                            error: result?.error || 'Codex user input response was rejected.',
-                        });
+                        if (!result?.ok) {
+                            writer.send({
+                                type: 'codex-interactive-response-error',
+                                requestId: data.requestId,
+                                sessionId: result?.sessionId || null,
+                                requestKind: result?.requestKind || 'user-input',
+                                code: result?.code || 'response_failed',
+                                error: result?.error || 'Codex user input response was rejected.',
+                            });
+                        }
                     } catch (error) {
                         console.error('[Codex] Failed to process user input response:', error);
                         writer.send({
@@ -1783,6 +1812,14 @@ function handleShellConnection(ws) {
                     return;
                 }
 
+                if (ptySessionsMap.size >= MAX_PTY_SESSIONS) {
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        message: `Too many active terminal sessions. Please close an existing session and try again.`
+                    }));
+                    return;
+                }
+
                 console.log('[INFO] Starting shell in:', projectPath);
                 console.log('📋 Session info:', hasSession ? `Resume session ${sessionId}` : (isPlainShell ? 'Plain shell mode' : 'New session'));
                 console.log('🤖 Provider:', isPlainShell ? 'plain-shell' : provider);
@@ -1913,6 +1950,7 @@ function handleShellConnection(ws) {
                         pty: shellProcess,
                         ws: ws,
                         buffer: [],
+                        bufferBytes: 0,
                         timeoutId: null,
                         projectPath,
                         sessionId
@@ -1923,12 +1961,27 @@ function handleShellConnection(ws) {
                         const session = ptySessionsMap.get(ptySessionKey);
                         if (!session) return;
 
-                        if (session.buffer.length < 5000) {
-                            session.buffer.push(data);
-                        } else {
-                            session.buffer.shift();
-                            session.buffer.push(data);
+                        let bufferedChunk = data;
+                        const maxChunkBytes = Math.max(1024, PTY_BUFFER_LIMIT_BYTES);
+                        if (Buffer.byteLength(bufferedChunk) > maxChunkBytes) {
+                            bufferedChunk = Buffer.from(bufferedChunk).subarray(-maxChunkBytes).toString('utf8');
                         }
+
+                        let chunkBytes = Buffer.byteLength(bufferedChunk);
+                        while (session.buffer.length > 0 && session.bufferBytes + chunkBytes > PTY_BUFFER_LIMIT_BYTES) {
+                            const removedChunk = session.buffer.shift();
+                            session.bufferBytes -= Buffer.byteLength(removedChunk);
+                        }
+
+                        if (session.bufferBytes + chunkBytes > PTY_BUFFER_LIMIT_BYTES) {
+                            session.buffer = [];
+                            session.bufferBytes = 0;
+                            bufferedChunk = Buffer.from(bufferedChunk).subarray(-PTY_BUFFER_LIMIT_BYTES).toString('utf8');
+                            chunkBytes = Buffer.byteLength(bufferedChunk);
+                        }
+
+                        session.buffer.push(bufferedChunk);
+                        session.bufferBytes += chunkBytes;
 
                         if (session.ws && session.ws.readyState === WebSocket.OPEN) {
                             let outputData = data;
@@ -2065,11 +2118,20 @@ function handleShellConnection(ws) {
 app.post('/api/transcribe', authenticateToken, async (req, res) => {
     try {
         const multer = (await import('multer')).default;
-        const upload = multer({ storage: multer.memoryStorage() });
+        const upload = multer({
+            storage: multer.memoryStorage(),
+            limits: {
+                fileSize: TRANSCRIBE_MAX_FILE_SIZE,
+                files: 1,
+            },
+        });
 
         // Handle multipart form data
         upload.single('audio')(req, res, async (err) => {
             if (err) {
+                if (err.code === 'LIMIT_FILE_SIZE') {
+                    return res.status(400).json({ error: `Audio file is too large. Maximum size is ${Math.floor(TRANSCRIBE_MAX_FILE_SIZE / (1024 * 1024))}MB.` });
+                }
                 return res.status(400).json({ error: 'Failed to process audio file' });
             }
 
@@ -2083,6 +2145,7 @@ app.post('/api/transcribe', authenticateToken, async (req, res) => {
             }
 
             try {
+                const requestAbort = createRequestAbortController(req, res);
                 // Create form data for OpenAI
                 const FormData = (await import('form-data')).default;
                 const formData = new FormData();
@@ -2096,7 +2159,13 @@ app.post('/api/transcribe', authenticateToken, async (req, res) => {
 
                 // Make request to OpenAI
                 const ac = new AbortController();
-                const timeout = setTimeout(() => ac.abort(), 15_000);
+                const abortOpenAi = () => {
+                    if (!ac.signal.aborted) {
+                        ac.abort();
+                    }
+                };
+                const timeout = setTimeout(abortOpenAi, 15_000);
+                requestAbort.signal.addEventListener('abort', abortOpenAi, { once: true });
                 let response;
                 try {
                     response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -2110,6 +2179,8 @@ app.post('/api/transcribe', authenticateToken, async (req, res) => {
                     });
                 } finally {
                     clearTimeout(timeout);
+                    requestAbort.signal.removeEventListener('abort', abortOpenAi);
+                    requestAbort.cleanup();
                 }
 
                 if (!response.ok) {
@@ -2136,7 +2207,7 @@ app.post('/api/transcribe', authenticateToken, async (req, res) => {
                 // Handle different enhancement modes
                 try {
                     const OpenAI = (await import('openai')).default;
-                    const openai = new OpenAI({ apiKey });
+                    const openai = new OpenAI({ apiKey, timeout: 15_000, maxRetries: 0 });
 
                     let prompt, systemMessage, temperature = 0.7, maxTokens = 800;
 
@@ -2450,6 +2521,8 @@ app.get('*', (req, res) => {
         res.redirect(`${req.protocol}://${redirectHost}:${VITE_PORT}`);
     }
 });
+
+app.use(errorHandler);
 
 // Helper function to convert permissions to rwx format
 function permToRwx(perm) {

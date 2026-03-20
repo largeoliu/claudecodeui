@@ -13,6 +13,7 @@ function resetCodexAppServerState() {
   codexAppServer.loadedThreads.clear();
   codexAppServer.pendingUiRequests.clear();
   codexAppServer.pendingUiRequestsByThread.clear();
+  codexAppServer.pendingUiResponseAcks.clear();
   codexAppServer.threadTokenUsage.clear();
   codexAppServer.threadCollaborationModes.clear();
   codexAppServer.threadTurnSettings.clear();
@@ -92,6 +93,200 @@ describe('codexAppServer interactive request lifecycle', () => {
     expect(codexAppServer.pendingUiRequests.has('req-1')).toBe(false);
     expect(codexAppServer.pendingUiRequestsByThread.get('session-1')).toBeUndefined();
     expect(broadcastSpy).not.toHaveBeenCalled();
+  });
+
+  it('preserves numeric request ids for user-input responses', async () => {
+    const sendResponseSpy = vi.spyOn(codexAppServer, 'sendResponse').mockImplementation(() => {});
+    vi.spyOn(codexAppServer, 'broadcastToThread').mockImplementation(() => {});
+
+    await codexAppServer.handleServerRequest({
+      id: 42,
+      method: 'item/tool/requestUserInput',
+      params: {
+        threadId: 'session-1',
+        turnId: 'turn-1',
+        itemId: 'item-1',
+        questions: [
+          {
+            id: 'strategy',
+            header: 'Support strategy',
+            question: 'Which strategy should we use?',
+            options: [{ label: 'Strict', description: 'Use the strict option.' }],
+          },
+        ],
+      },
+    });
+
+    const result = await codexAppServer.respondToUserInput('42', {
+      strategy: 'Strict',
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        requestId: '42',
+        sessionId: 'session-1',
+        requestKind: 'user-input',
+      }),
+    );
+    expect(sendResponseSpy).toHaveBeenCalledWith(42, {
+      answers: {
+        strategy: { answers: ['Strict'] },
+      },
+    });
+    expect(codexAppServer.pendingUiResponseAcks.has('42')).toBe(true);
+  });
+
+  it('preserves numeric request ids for approval responses', async () => {
+    const sendResponseSpy = vi.spyOn(codexAppServer, 'sendResponse').mockImplementation(() => {});
+    vi.spyOn(codexAppServer, 'broadcastToThread').mockImplementation(() => {});
+
+    await codexAppServer.handleServerRequest({
+      id: 43,
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'session-1',
+        turnId: 'turn-1',
+        itemId: 'item-1',
+        command: 'npm test',
+        cwd: '/opt/claudecodeui',
+      },
+    });
+
+    const result = await codexAppServer.respondToApproval('43', { allow: true });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        requestId: '43',
+        sessionId: 'session-1',
+        requestKind: 'approval',
+      }),
+    );
+    expect(sendResponseSpy).toHaveBeenCalledWith(43, { decision: 'accept' });
+    expect(codexAppServer.pendingUiResponseAcks.has('43')).toBe(true);
+  });
+
+  it('keeps string request ids unchanged for user-input responses', async () => {
+    const sendResponseSpy = vi.spyOn(codexAppServer, 'sendResponse').mockImplementation(() => {});
+    vi.spyOn(codexAppServer, 'broadcastToThread').mockImplementation(() => {});
+
+    await codexAppServer.handleServerRequest({
+      id: 'req-user-1',
+      method: 'item/tool/requestUserInput',
+      params: {
+        threadId: 'session-1',
+        turnId: 'turn-1',
+        itemId: 'item-1',
+        questions: [
+          {
+            id: 'strategy',
+            header: 'Support strategy',
+            question: 'Which strategy should we use?',
+            options: [{ label: 'Strict', description: 'Use the strict option.' }],
+          },
+        ],
+      },
+    });
+
+    await codexAppServer.respondToUserInput('req-user-1', {
+      strategy: 'Strict',
+    });
+
+    expect(sendResponseSpy).toHaveBeenCalledWith('req-user-1', {
+      answers: {
+        strategy: { answers: ['Strict'] },
+      },
+    });
+  });
+
+  it('broadcasts interactive ack only after server request resolution is observed', async () => {
+    const broadcastSpy = vi.spyOn(codexAppServer, 'broadcastToThread').mockImplementation(() => {});
+    vi.spyOn(codexAppServer, 'sendResponse').mockImplementation(() => {});
+
+    await codexAppServer.handleServerRequest({
+      id: 44,
+      method: 'item/tool/requestUserInput',
+      params: {
+        threadId: 'session-1',
+        turnId: 'turn-1',
+        itemId: 'item-1',
+        questions: [
+          {
+            id: 'strategy',
+            header: 'Support strategy',
+            question: 'Which strategy should we use?',
+            options: [{ label: 'Strict', description: 'Use the strict option.' }],
+          },
+        ],
+      },
+    });
+
+    await codexAppServer.respondToUserInput('44', {
+      strategy: 'Strict',
+    });
+
+    expect(
+      broadcastSpy.mock.calls.some(([, payload]) => payload?.type === 'codex-interactive-response-ack'),
+    ).toBe(false);
+
+    codexAppServer.handleNotification({
+      method: 'serverRequest/resolved',
+      params: {
+        threadId: 'session-1',
+        requestId: 44,
+      },
+    });
+
+    expect(broadcastSpy).toHaveBeenCalledWith('session-1', {
+      type: 'codex-interactive-response-ack',
+      requestId: '44',
+      sessionId: 'session-1',
+      requestKind: 'user-input',
+      toolName: 'AskUserQuestion',
+    });
+    expect(codexAppServer.pendingUiResponseAcks.has('44')).toBe(false);
+  });
+
+  it('falls back to turn progress notifications for interactive ack confirmation', async () => {
+    const broadcastSpy = vi.spyOn(codexAppServer, 'broadcastToThread').mockImplementation(() => {});
+    vi.spyOn(codexAppServer, 'sendResponse').mockImplementation(() => {});
+
+    await codexAppServer.handleServerRequest({
+      id: 45,
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'session-1',
+        turnId: 'turn-1',
+        itemId: 'item-1',
+        command: 'npm test',
+        cwd: '/opt/claudecodeui',
+      },
+    });
+
+    await codexAppServer.respondToApproval('45', { allow: true });
+
+    codexAppServer.handleNotification({
+      method: 'item/completed',
+      params: {
+        threadId: 'session-1',
+        turnId: 'turn-1',
+        item: {
+          id: 'item-2',
+          type: 'agentMessage',
+          text: 'done',
+        },
+      },
+    });
+
+    expect(broadcastSpy).toHaveBeenCalledWith('session-1', {
+      type: 'codex-interactive-response-ack',
+      requestId: '45',
+      sessionId: 'session-1',
+      requestKind: 'approval',
+      toolName: 'Bash',
+    });
+    expect(codexAppServer.pendingUiResponseAcks.has('45')).toBe(false);
   });
 
   it('still broadcasts cancellation when pending requests are cleared for teardown', () => {

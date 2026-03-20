@@ -133,10 +133,10 @@ export default function ProviderSelectionEmptyState({
   /* ── New session — provider picker ── */
   if (!selectedSession && !currentSessionId) {
     return (
-      <div className="flex h-full items-center justify-center px-4">
-        <div className="w-full max-w-2xl">
+      <div className="flex h-full items-center justify-start px-4">
+        <div className="w-full">
           {/* Heading */}
-          <div className="mb-8 text-center">
+          <div className="mb-8 text-left">
             <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
               {t("providerSelection.title")}
             </h2>
@@ -145,8 +145,8 @@ export default function ProviderSelectionEmptyState({
             </p>
           </div>
 
-          {/* Provider cards — centered flex row */}
-          <div className="mb-10 flex flex-wrap items-stretch justify-center gap-3 sm:gap-4">
+          {/* Provider cards — left-aligned flex row */}
+          <div className="mb-10 flex flex-wrap items-stretch justify-start gap-3 sm:gap-4">
             {PROVIDERS.map((p) => {
               const active = provider === p.id;
               return (
@@ -193,7 +193,7 @@ export default function ProviderSelectionEmptyState({
           <div
             className={`transition-all duration-200 ${provider ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1 opacity-0"}`}
           >
-            <div className="mb-5 flex items-center justify-center gap-2">
+            <div className="mb-5 flex items-center justify-start gap-2">
               <span className="text-sm text-muted-foreground">
                 {t("providerSelection.selectModel")}
               </span>
@@ -216,7 +216,7 @@ export default function ProviderSelectionEmptyState({
               </div>
             </div>
 
-            <p className="text-center text-sm text-muted-foreground/70">
+            <p className="text-left text-sm text-muted-foreground/70">
               {
                 {
                   claude: t("providerSelection.readyPrompt.claude", {
@@ -250,8 +250,8 @@ export default function ProviderSelectionEmptyState({
   /* ── Existing session — continue prompt ── */
   if (selectedSession) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="max-w-md px-6 text-center">
+      <div className="flex h-full items-center justify-start">
+        <div className="max-w-md px-6 text-left">
           <p className="mb-1.5 text-lg font-semibold text-foreground">
             {t("session.continue.title")}
           </p>

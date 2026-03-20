@@ -2,6 +2,10 @@ import type { ClaudeSettings } from '../types/types';
 
 export const CLAUDE_SETTINGS_KEY = 'claude-settings';
 
+export function getChatMessagesStorageKey(projectName: string, sessionId: string, provider = 'claude') {
+  return `chat_messages_${projectName}:${provider}:${sessionId}`;
+}
+
 export const safeLocalStorage = {
   setItem: (key: string, value: string) => {
     try {

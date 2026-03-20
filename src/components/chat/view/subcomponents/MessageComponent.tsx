@@ -124,8 +124,8 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
     >
       {message.type === 'user' ? (
         /* User message bubble on the right */
-        <div className="flex w-full flex-col items-end sm:w-auto sm:max-w-[85%] md:max-w-2xl lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl">
-          <div className="group min-w-[60px] rounded-lg border border-white/10 bg-white/[0.06] px-5 py-2 text-white/90 transition-all duration-300 hover:bg-white/[0.08] hover:border-white/20 shadow-lg shadow-black/10">
+        <div className="flex w-full flex-col items-end">
+          <div className="group min-w-[60px] max-w-[85%] rounded-lg border border-white/10 bg-white/[0.06] px-5 py-2 text-white/90 transition-all duration-300 hover:bg-white/[0.08] hover:border-white/20 shadow-lg shadow-black/10">
             <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed font-normal tracking-wide">
               {message.content}
             </div>
@@ -160,7 +160,7 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
       ) : (
         /* Claude/Error/Tool messages on the left */
         <div className="flex w-full flex-col items-start">
-          <div className="w-full px-5 py-1">
+          <div className="w-full py-1">
             {message.isToolUse ? (
               <>
                 <div className="flex flex-col">
@@ -441,7 +441,7 @@ const MessageComponent = memo(({ message, prevMessage, nextMessage, createDiff, 
           </div>
 
           {shouldShowTimestamp && (
-            <div className="mt-0.5 flex w-full items-center gap-2 text-[10px] font-medium text-white/20 uppercase tracking-wider px-2">
+            <div className="mt-0.5 flex w-full items-center justify-start gap-2 text-[10px] font-medium text-white/20 uppercase tracking-wider">
               <span>{formattedTime}</span>
             </div>
           )}

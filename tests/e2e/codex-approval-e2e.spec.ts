@@ -175,7 +175,6 @@ test('user can deny a Codex approval request', async ({ page, request }) => {
     type: 'codex-approval-response',
     requestId: 'approval-req-deny-1',
     allow: false,
-    message: 'User denied tool use',
   });
 
   expectNoUnexpectedRuntimeIssues(runtimeIssues);

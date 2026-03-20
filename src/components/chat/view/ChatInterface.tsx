@@ -16,7 +16,6 @@ import {
 } from '../utils/interactiveRequestTransport';
 import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
-import CodexSessionControlsBar from './subcomponents/CodexSessionControlsBar';
 
 const CHAT_REALTIME_MESSAGE_TYPES = new Set([
   'session-created',
@@ -94,6 +93,15 @@ function ChatInterface({
   const streamBufferRef = useRef('');
   const streamTimerRef = useRef<number | null>(null);
   const pendingViewSessionRef = useRef<PendingViewSession | null>(null);
+  const activeSessionSelectionRef = useRef<{
+    projectName: string | null;
+    sessionId: string | null;
+    provider: Provider | null;
+  }>({
+    projectName: selectedProject?.name || null,
+    sessionId: selectedSession?.id || null,
+    provider: selectedSession?.id ? (selectedSession.__provider || 'claude') : null,
+  });
   const interactiveRequestTimeoutsRef = useRef(
     new Map<string, { deliveryState: InFlightInteractiveRequestState; timeoutId: number }>(),
   );
@@ -105,6 +113,14 @@ function ChatInterface({
     }
     streamBufferRef.current = '';
   }, []);
+
+  useEffect(() => {
+    activeSessionSelectionRef.current = {
+      projectName: selectedProject?.name || null,
+      sessionId: selectedSession?.id || null,
+      provider: selectedSession?.id ? (selectedSession.__provider || 'claude') : null,
+    };
+  }, [selectedProject?.name, selectedSession?.id, selectedSession?.__provider]);
 
   const {
     chatMessages,
@@ -295,8 +311,20 @@ function ChatInterface({
   // would be stuck in "Processing..." forever without this reset.
   const handleWebSocketReconnect = useCallback(async () => {
     if (!selectedProject || !selectedSession) return;
-    const provider = selectedSession.__provider || (localStorage.getItem('selected-provider') as any) || 'claude';
-    const messages = await loadSessionMessages(selectedProject.name, selectedSession.id, false, provider);
+    const requestProjectName = selectedProject.name;
+    const requestSessionId = selectedSession.id;
+    const requestProvider = selectedSession.__provider || 'claude';
+    const messages = await loadSessionMessages(requestProjectName, requestSessionId, false, requestProvider);
+    const activeSelection = activeSessionSelectionRef.current;
+
+    if (
+      activeSelection.projectName !== requestProjectName
+      || activeSelection.sessionId !== requestSessionId
+      || activeSelection.provider !== requestProvider
+    ) {
+      return;
+    }
+
     if (messages && messages.length > 0) {
       setChatMessages(messages);
     }
@@ -306,13 +334,13 @@ function ChatInterface({
     setCanAbortSession(false);
     requestPendingPermissions();
   }, [
+    loadSessionMessages,
+    requestPendingPermissions,
     selectedProject,
     selectedSession,
-    loadSessionMessages,
     setChatMessages,
-    setIsLoading,
     setCanAbortSession,
-    requestPendingPermissions,
+    setIsLoading,
   ]);
 
   useChatRealtimeHandlers({

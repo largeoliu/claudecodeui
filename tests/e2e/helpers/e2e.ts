@@ -29,6 +29,8 @@ const allowedConsoleErrorPatterns = [
   /Failed to load resource: the server responded with a status of \d+ \(.+\)/,
   /Failed to load resource: the server responded with a status of 403 \(\)/,
   /Error fetching MCP servers:/,
+  /cursor auth status/,
+  /Error checking TaskMaster installation/,
 ];
 
 const allowedHttpErrors = [

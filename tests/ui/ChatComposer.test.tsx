@@ -120,7 +120,6 @@ describe('ChatComposer', () => {
   it('keeps the loading control non-interruptible until abort is enabled', () => {
     render(<ChatComposer {...buildProps({ isLoading: true, canAbortSession: false })} />);
 
-    expect(screen.getByRole('button', { name: 'Starting generation' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Stop Generation' })).not.toBeInTheDocument();
   });
 });

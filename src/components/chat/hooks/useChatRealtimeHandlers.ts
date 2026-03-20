@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { decodeHtmlEntities, formatUsageLimitText } from '../utils/chatFormatting';
-import { safeLocalStorage } from '../utils/chatStorage';
+import { getChatMessagesStorageKey, safeLocalStorage } from '../utils/chatStorage';
 import type { ChatMessage, PendingPermissionRequest } from '../types/types';
 import {
   createPendingInteractiveRequest,
@@ -59,6 +59,20 @@ interface UseChatRealtimeHandlersArgs {
   onNavigateToSession?: (sessionId: string) => void;
   onWebSocketReconnect?: () => void;
   onCodexInteractiveRequestSettled?: () => void;
+}
+
+function clearChatMessagesCache(
+  projectName: string,
+  provider: SessionProvider,
+  sessionIds: Array<string | null | undefined>,
+) {
+  const uniqueSessionIds = new Set(
+    sessionIds.filter((sessionId): sessionId is string => typeof sessionId === 'string' && sessionId.length > 0),
+  );
+
+  uniqueSessionIds.forEach((sessionId) => {
+    safeLocalStorage.removeItem(getChatMessagesStorageKey(projectName, sessionId, provider));
+  });
 }
 
 const appendStreamingChunk = (
@@ -1054,7 +1068,12 @@ export function useChatRealtimeHandlers({
         }
 
         if (selectedProject && latestMessage.exitCode === 0) {
-          safeLocalStorage.removeItem(`chat_messages_${selectedProject.name}`);
+          clearChatMessagesCache(selectedProject.name, 'claude', [
+            latestMessage.sessionId,
+            currentSessionId,
+            selectedSession?.id,
+            pendingSessionId,
+          ]);
         }
         break;
       }
@@ -1529,7 +1548,13 @@ export function useChatRealtimeHandlers({
         }
 
         if (selectedProject) {
-          safeLocalStorage.removeItem(`chat_messages_${selectedProject.name}`);
+          clearChatMessagesCache(selectedProject.name, 'codex', [
+            latestMessage.actualSessionId,
+            latestMessage.sessionId,
+            currentSessionId,
+            selectedSession?.id,
+            codexPendingSessionId,
+          ]);
         }
         break;
       }

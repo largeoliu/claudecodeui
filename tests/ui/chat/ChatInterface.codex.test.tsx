@@ -305,6 +305,7 @@ function renderChatInterface(overrides: Partial<ComponentProps<typeof ChatInterf
   };
 
   return {
+    props,
     sendMessage,
     ...render(<ChatInterface {...props} />),
   };
@@ -385,6 +386,53 @@ describe('ChatInterface codex orchestration', () => {
     expect(sendMessage).toHaveBeenCalledWith({
       type: 'get-pending-permissions',
       sessionId: 'codex-session-1',
+      provider: 'codex',
+    });
+  });
+
+  it('ignores reconnect results that arrive after the user switches sessions', async () => {
+    let resolveMessages: ((messages: any[]) => void) | null = null;
+    chatInterfaceMocks.sessionState.loadSessionMessages.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveMessages = resolve;
+      }),
+    );
+
+    const { props, rerender, sendMessage } = renderChatInterface();
+
+    await waitFor(() => {
+      expect(chatInterfaceMocks.realtimeArgs).toBeTruthy();
+    });
+
+    sendMessage.mockClear();
+    chatInterfaceMocks.sessionState.setChatMessages.mockClear();
+    chatInterfaceMocks.sessionState.setIsLoading.mockClear();
+    chatInterfaceMocks.sessionState.setCanAbortSession.mockClear();
+
+    const reconnectPromise = chatInterfaceMocks.realtimeArgs.onWebSocketReconnect();
+
+    rerender(
+      <ChatInterface
+        {...props}
+        selectedSession={{
+          id: 'codex-session-2',
+          __provider: 'codex',
+        } as any}
+      />,
+    );
+
+    await act(async () => {
+      resolveMessages?.([{ type: 'assistant', content: 'Recovered output', timestamp: 1 }]);
+      await reconnectPromise;
+    });
+
+    expect(chatInterfaceMocks.sessionState.setChatMessages).not.toHaveBeenCalled();
+    expect(chatInterfaceMocks.sessionState.setIsLoading).not.toHaveBeenCalled();
+    expect(chatInterfaceMocks.sessionState.setCanAbortSession).not.toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith({
+      type: 'get-pending-permissions',
+      sessionId: 'codex-session-2',
       provider: 'codex',
     });
   });

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { vi } from 'vitest';
 import { useChatRealtimeHandlers } from '../../../src/components/chat/hooks/useChatRealtimeHandlers';
 import type { ChatMessage, PendingPermissionRequest } from '../../../src/components/chat/types/types';
+import { getChatMessagesStorageKey } from '../../../src/components/chat/utils/chatStorage';
 import type { Project, ProjectSession, SessionProvider } from '../../../src/types/app';
 
 type HarnessOptions = {
@@ -541,7 +542,14 @@ describe('useChatRealtimeHandlers', () => {
 
   it('updates lifecycle state for Codex turns and navigates to completed sessions', async () => {
     sessionStorage.setItem('pendingSessionId', 'session-pending');
-    localStorage.setItem('chat_messages_demo-project', JSON.stringify([{ type: 'assistant', content: 'stale' }]));
+    localStorage.setItem(
+      getChatMessagesStorageKey('demo-project', 'session-pending', 'codex'),
+      JSON.stringify([{ type: 'assistant', content: 'stale-pending' }]),
+    );
+    localStorage.setItem(
+      getChatMessagesStorageKey('demo-project', 'session-final', 'codex'),
+      JSON.stringify([{ type: 'assistant', content: 'stale-final' }]),
+    );
     const harness = renderRealtimeHarness({
       provider: 'codex',
       selectedSession: null,
@@ -570,7 +578,8 @@ describe('useChatRealtimeHandlers', () => {
     });
 
     expect(sessionStorage.getItem('pendingSessionId')).toBeNull();
-    expect(localStorage.getItem('chat_messages_demo-project')).toBeNull();
+    expect(localStorage.getItem(getChatMessagesStorageKey('demo-project', 'session-pending', 'codex'))).toBeNull();
+    expect(localStorage.getItem(getChatMessagesStorageKey('demo-project', 'session-final', 'codex'))).toBeNull();
     expect(harness.result.current.currentSessionId).toBe('session-final');
     expect(harness.result.current.isSystemSessionChange).toBe(true);
     expect(harness.callbacks.onNavigateToSession).toHaveBeenCalledWith('session-final');

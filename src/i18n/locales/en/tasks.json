@@ -138,5 +138,38 @@
   "noMatchingTasks": {
     "title": "No tasks match your filters",
     "description": "Try adjusting your search or filter criteria."
+  },
+  "parentTask": "Task {{id}}",
+  "dependencies": "Dependencies",
+  "dependsOn": "Depends on",
+  "taskId": "Task {{id}}",
+  "progress": "Progress",
+  "createModal": {
+    "title": "Create AI-Generated Task",
+    "proTip": "Pro tip: ask Claude Code directly",
+    "proTipDescription": "Ask for a task in chat with context and requirements. TaskMaster can generate implementation-ready tasks.",
+    "examplePrompt": "Please add a task for profile image uploads and include best-practice research.",
+    "viewDocs": "View TaskMaster documentation",
+    "gotIt": "Got it"
+  },
+  "detailModal": {
+    "copyTaskId": "Copy task ID",
+    "dependencies": "Dependencies",
+    "noDependencies": "No dependencies",
+    "description": "Description",
+    "noDescription": "No description provided",
+    "implementationDetails": "Implementation Details",
+    "testStrategy": "Test Strategy",
+    "notSet": "Not set"
+  },
+  "banner": {
+    "initialize": "Initialize",
+    "hideDetails": "Hide details",
+    "startTask": "Start Task",
+    "viewDetails": "View task details",
+    "viewAll": "View all tasks",
+    "allComplete": "All tasks complete",
+    "noPending": "No pending tasks",
+    "review": "Review"
   }
 }

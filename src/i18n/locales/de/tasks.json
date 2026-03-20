@@ -138,5 +138,38 @@
   "noMatchingTasks": {
     "title": "Keine Aufgaben entsprechen deinen Filtern",
     "description": "Versuche, deine Such- oder Filterkriterien anzupassen."
+  },
+  "parentTask": "Aufgabe {{id}}",
+  "dependencies": "Abhängigkeiten",
+  "dependsOn": "Abhängig von",
+  "taskId": "Aufgabe {{id}}",
+  "progress": "Fortschritt",
+  "createModal": {
+    "title": "KI-generierte Aufgabe erstellen",
+    "proTip": "Tipp: Fragt Claude Code direkt",
+    "proTipDescription": "Bittet im Chat um eine Aufgabe mit Kontext und Anforderungen. TaskMaster kann implementierungsbereite Aufgaben generieren.",
+    "examplePrompt": "Bitte fügt eine Aufgabe für Profilbild-Uploads hinzu und nehmt Best-Practice-Recherche auf.",
+    "viewDocs": "TaskMaster-Dokumentation ansehen",
+    "gotIt": "Verstanden"
+  },
+  "detailModal": {
+    "copyTaskId": "Aufgaben-ID kopieren",
+    "dependencies": "Abhängigkeiten",
+    "noDependencies": "Keine Abhängigkeiten",
+    "description": "Beschreibung",
+    "noDescription": "Keine Beschreibung angegeben",
+    "implementationDetails": "Implementierungsdetails",
+    "testStrategy": "Teststrategie",
+    "notSet": "Nicht gesetzt"
+  },
+  "banner": {
+    "initialize": "Initialisieren",
+    "hideDetails": "Details ausblenden",
+    "startTask": "Aufgabe starten",
+    "viewDetails": "Aufgabendetails anzeigen",
+    "viewAll": "Alle Aufgaben anzeigen",
+    "allComplete": "Alle Aufgaben erledigt",
+    "noPending": "Keine ausstehenden Aufgaben",
+    "review": "Überprüfen"
   }
 }

@@ -1,0 +1,68 @@
+{
+  "panel": {
+    "noProject": "选择项目以查看源代码管理"
+  },
+  "changes": {
+    "noCommitsYet": "尚无提交",
+    "noCommitsYetDescription": "此仓库尚无提交。创建您的第一个提交以开始跟踪更改。",
+    "creatingInitialCommit": "正在创建初始提交...",
+    "createInitialCommit": "创建初始提交",
+    "noChangesDetected": "未检测到更改",
+    "staged": "已暂存",
+    "unstageAll": "取消全部暂存",
+    "noStagedFiles": "无已暂存文件",
+    "allChangesStaged": "所有更改已暂存",
+    "changes": "更改",
+    "stageAll": "暂存全部"
+  },
+  "commit": {
+    "commitChanges": "提交更改",
+    "commitFile": "提交 {{count}} 个文件",
+    "commitFiles": "提交 {{count}} 个文件",
+    "messagePlaceholder": "消息 (Ctrl+Enter 提交)",
+    "generateMessage": "生成提交消息",
+    "selected": "已选择",
+    "committing": "提交中...",
+    "commit": "提交"
+  },
+  "history": {
+    "noCommitsFound": "未找到提交",
+    "author": "作者",
+    "date": "日期",
+    "files": "文件",
+    "added": "添加",
+    "removed": "删除",
+    "changedFiles": "已更改的文件"
+  },
+  "branches": {
+    "noBranchesFound": "未找到分支"
+  },
+  "branchModal": {
+    "createNewBranch": "创建新分支",
+    "createBranch": "创建分支",
+    "branchName": "分支名称",
+    "createFrom": "这将从当前分支 ({{branch}}) 创建一个新分支",
+    "cancel": "取消",
+    "creating": "创建中..."
+  },
+  "legend": {
+    "fileStatusGuide": "文件状态指南",
+    "modified": "已修改",
+    "added": "已添加",
+    "deleted": "已删除",
+    "untracked": "未跟踪"
+  },
+  "gitPanelHeader": {
+    "createNewBranch": "创建新分支",
+    "publish": "发布",
+    "publishing": "发布中...",
+    "fetch": "获取",
+    "fetching": "获取中...",
+    "pull": "拉取",
+    "pulling": "拉取中...",
+    "push": "推送",
+    "pushing": "推送中...",
+    "revert": "还原",
+    "reverting": "还原中..."
+  }
+}

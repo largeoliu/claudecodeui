@@ -1,0 +1,68 @@
+{
+  "panel": {
+    "noProject": "Select a project to view source control"
+  },
+  "changes": {
+    "noCommitsYet": "No commits yet",
+    "noCommitsYetDescription": "This repository doesn't have any commits yet. Create your first commit to start tracking changes.",
+    "creatingInitialCommit": "Creating Initial Commit...",
+    "createInitialCommit": "Create Initial Commit",
+    "noChangesDetected": "No changes detected",
+    "staged": "Staged",
+    "unstageAll": "Unstage All",
+    "noStagedFiles": "No staged files",
+    "allChangesStaged": "All changes staged",
+    "changes": "Changes",
+    "stageAll": "Stage All"
+  },
+  "commit": {
+    "commitChanges": "Commit Changes",
+    "commitFile": "Commit {{count}} file",
+    "commitFiles": "Commit {{count}} files",
+    "messagePlaceholder": "Message (Ctrl+Enter to commit)",
+    "generateMessage": "Generate commit message",
+    "selected": "selected",
+    "committing": "Committing...",
+    "commit": "Commit"
+  },
+  "history": {
+    "noCommitsFound": "No commits found",
+    "author": "Author",
+    "date": "Date",
+    "files": "Files",
+    "added": "Added",
+    "removed": "Removed",
+    "changedFiles": "Changed Files"
+  },
+  "branches": {
+    "noBranchesFound": "No branches found"
+  },
+  "branchModal": {
+    "createNewBranch": "Create New Branch",
+    "createBranch": "Create Branch",
+    "branchName": "Branch Name",
+    "createFrom": "This will create a new branch from the current branch ({{branch}})",
+    "cancel": "Cancel",
+    "creating": "Creating..."
+  },
+  "legend": {
+    "fileStatusGuide": "File Status Guide",
+    "modified": "Modified",
+    "added": "Added",
+    "deleted": "Deleted",
+    "untracked": "Untracked"
+  },
+  "gitPanelHeader": {
+    "createNewBranch": "Create new branch",
+    "publish": "Publish",
+    "publishing": "Publishing…",
+    "fetch": "Fetch",
+    "fetching": "Fetching…",
+    "pull": "Pull",
+    "pulling": "Pulling…",
+    "push": "Push",
+    "pushing": "Pushing…",
+    "revert": "Revert",
+    "reverting": "Reverting…"
+  }
+}

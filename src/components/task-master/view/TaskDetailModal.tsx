@@ -13,6 +13,7 @@ import {
   Save,
   X,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../../lib/utils';
 import { copyTextToClipboard } from '../../../utils/clipboard';
 import { api } from '../../../utils/api';
@@ -29,14 +30,18 @@ type TaskDetailModalProps = {
   onTaskClick?: ((task: TaskReference) => void) | null;
 };
 
-const STATUS_OPTIONS = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'in-progress', label: 'In Progress' },
-  { value: 'review', label: 'Review' },
-  { value: 'done', label: 'Done' },
-  { value: 'deferred', label: 'Deferred' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
+type StatusOption = { value: string; label: string };
+
+function getStatusOptions(t: (key: string) => string): StatusOption[] {
+  return [
+    { value: 'pending', label: t('statuses.pending') },
+    { value: 'in-progress', label: t('statuses.in-progress') },
+    { value: 'review', label: t('statuses.review') ?? 'Review' },
+    { value: 'done', label: t('statuses.done') },
+    { value: 'deferred', label: t('statuses.deferred') },
+    { value: 'cancelled', label: t('statuses.cancelled') },
+  ];
+}
 
 function getStatusIcon(status?: string) {
   if (status === 'done') return CheckCircle;
@@ -63,6 +68,7 @@ export default function TaskDetailModal({
   onStatusChange = null,
   onTaskClick = null,
 }: TaskDetailModalProps) {
+  const { t } = useTranslation('tasks');
   const { currentProject, refreshTasks } = useTaskMaster();
 
   const [isEditMode, setIsEditMode] = useState(false);
@@ -70,6 +76,8 @@ export default function TaskDetailModal({
   const [showDetails, setShowDetails] = useState(false);
   const [showTestStrategy, setShowTestStrategy] = useState(false);
   const [editableTask, setEditableTask] = useState<TaskMasterTask | null>(task);
+
+  const STATUS_OPTIONS = useMemo(() => getStatusOptions(t), [t]);
 
   useEffect(() => {
     setEditableTask(task);
@@ -154,15 +162,15 @@ export default function TaskDetailModal({
         )}
       >
         <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700 md:p-6">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
             <StatusIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
             <div className="min-w-0 flex-1">
               <button
                 onClick={() => copyTextToClipboard(String(task.id))}
                 className="mb-2 inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                title="Copy task ID"
+                title={t('detailModal.copyTaskId')}
               >
-                <span>Task {task.id}</span>
+                <span>{t('parentTask', { id: task.id })}</span>
                 <Copy className="h-3 w-3" />
               </button>
 
@@ -186,7 +194,7 @@ export default function TaskDetailModal({
                   onClick={handleSaveChanges}
                   disabled={isSaving}
                   className="rounded-md p-2 text-green-600 hover:bg-green-50 disabled:opacity-50 dark:hover:bg-green-950"
-                  title="Save"
+                  title={t('buttons.save')}
                 >
                   <Save className={cn('w-5 h-5', isSaving && 'animate-spin')} />
                 </button>
@@ -197,7 +205,7 @@ export default function TaskDetailModal({
                   }}
                   disabled={isSaving}
                   className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  title="Cancel editing"
+                  title={t('buttons.cancel')}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -206,12 +214,12 @@ export default function TaskDetailModal({
               <button
                 onClick={() => setIsEditMode(true)}
                 className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Edit task"
+                title={t('buttons.edit')}
               >
                 <Edit className="h-5 w-5" />
               </button>
             )}
-            <button onClick={onClose} className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title="Close">
+            <button onClick={onClose} className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title={t('buttons.close')}>
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -220,7 +228,7 @@ export default function TaskDetailModal({
         <div className="flex-1 space-y-6 overflow-y-auto p-4 md:p-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('filters.status')}</label>
               <select
                 value={task.status ?? 'pending'}
                 onChange={(event) => {
@@ -237,14 +245,14 @@ export default function TaskDetailModal({
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Priority</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('filters.priority')}</label>
               <div className={cn('px-3 py-2 rounded-md text-sm font-medium capitalize', getPriorityBadgeClass(task.priority))}>
-                {task.priority ?? 'Not set'}
+                {task.priority ? t(`priorities.${task.priority}`) : t('detailModal.notSet')}
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Dependencies</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('detailModal.dependencies')}</label>
               {Array.isArray(task.dependencies) && task.dependencies.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {task.dependencies.map((dependency) => (
@@ -259,13 +267,13 @@ export default function TaskDetailModal({
                   ))}
                 </div>
               ) : (
-                <span className="text-sm text-gray-500 dark:text-gray-400">No dependencies</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{t('detailModal.noDependencies')}</span>
               )}
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('detailModal.description')}</label>
             {isEditMode ? (
               <textarea
                 rows={4}
@@ -274,7 +282,7 @@ export default function TaskDetailModal({
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-800"
               />
             ) : (
-              <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{task.description || 'No description provided'}</p>
+              <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{task.description || t('detailModal.noDescription')}</p>
             )}
           </div>
 
@@ -284,7 +292,7 @@ export default function TaskDetailModal({
                 onClick={() => setShowDetails((current) => !current)}
                 className="flex w-full items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
               >
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Implementation Details</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('detailModal.implementationDetails')}</span>
                 {showDetails ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
               {showDetails && (
@@ -301,7 +309,7 @@ export default function TaskDetailModal({
                 onClick={() => setShowTestStrategy((current) => !current)}
                 className="flex w-full items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
               >
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Test Strategy</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('detailModal.testStrategy')}</span>
                 {showTestStrategy ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
               {showTestStrategy && (

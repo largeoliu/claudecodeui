@@ -1,5 +1,6 @@
 import { Check, GitBranch, Globe, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ConfirmationRequest, GitRemoteStatus } from '../../types/types';
 import NewBranchModal from '../modals/NewBranchModal';
 
@@ -137,6 +138,7 @@ export default function BranchesView({
   onDeleteBranch,
   onRequestConfirmation,
 }: BranchesViewProps) {
+  const { t } = useTranslation('git');
   const [showNewBranchModal, setShowNewBranchModal] = useState(false);
 
   const aheadCount = remoteStatus?.ahead ?? 0;
@@ -225,7 +227,7 @@ export default function BranchesView({
         {localBranches.length === 0 && remoteBranches.length === 0 && (
           <div className="flex h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
             <GitBranch className="h-10 w-10 opacity-30" />
-            <p className="text-sm">No branches found</p>
+            <p className="text-sm">{t('branches.noBranchesFound')}</p>
           </div>
         )}
       </div>

@@ -138,5 +138,38 @@
   "noMatchingTasks": {
     "title": "フィルターに一致するタスクがありません",
     "description": "検索条件またはフィルター基準を調整してみてください。"
+  },
+  "parentTask": "タスク {{id}}",
+  "dependencies": "依存関係",
+  "dependsOn": "依存",
+  "taskId": "タスク {{id}}",
+  "progress": "進捗",
+  "createModal": {
+    "title": "AI 生成タスクの作成",
+    "proTip": "ヒント: Claude Code に直接リクエスト",
+    "proTipDescription": "コンテキストと要件をチャットでリクエストしてください。TaskMaster は実装可能なタスクを生成できます。",
+    "examplePrompt": "プロフィール画像アップロードのタスクを追加し、ベストプラクティスの調査を含めるてください。",
+    "viewDocs": "TaskMaster ドキュメントを見る",
+    "gotIt": "了解"
+  },
+  "detailModal": {
+    "copyTaskId": "タスクIDをコピー",
+    "dependencies": "依存関係",
+    "noDependencies": "依存関係なし",
+    "description": "説明",
+    "noDescription": "説明がありません",
+    "implementationDetails": "実装の詳細",
+    "testStrategy": "テスト戦略",
+    "notSet": "未設定"
+  },
+  "banner": {
+    "initialize": "初期化",
+    "hideDetails": "詳細を隠す",
+    "startTask": "タスクを開始",
+    "viewDetails": "タスク詳細を見る",
+    "viewAll": "すべてのタスクを見る",
+    "allComplete": "すべてのタスク完了",
+    "noPending": "保留中のタスクなし",
+    "review": "確認"
   }
 }

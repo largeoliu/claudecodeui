@@ -1,5 +1,6 @@
 import { AlertCircle, Check, ChevronDown, Download, GitBranch, Plus, RefreshCw, RotateCcw, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ConfirmationRequest, GitRemoteStatus } from '../types/types';
 import NewBranchModal from './modals/NewBranchModal';
 
@@ -52,6 +53,7 @@ export default function GitPanelHeader({
   onClearError,
   onRequestConfirmation,
 }: GitPanelHeaderProps) {
+  const { t } = useTranslation('git');
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [showNewBranchModal, setShowNewBranchModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -174,7 +176,7 @@ export default function GitPanelHeader({
                   className="flex w-full items-center space-x-2 px-4 py-2 text-left text-sm transition-colors hover:bg-accent"
                 >
                   <Plus className="h-3 w-3" />
-                  <span>Create new branch</span>
+                  <span>{t('gitPanelHeader.createNewBranch')}</span>
                 </button>
               </div>
             </div>
@@ -190,10 +192,10 @@ export default function GitPanelHeader({
                   onClick={requestPublishConfirmation}
                   disabled={anyPending}
                   className="flex items-center gap-1 rounded-lg bg-purple-600 px-2.5 py-1 text-sm text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
-                  title={`Publish "${currentBranch}" to ${remoteName}`}
+                  title={`${t('gitPanelHeader.publish')} "${currentBranch}" to ${remoteName}`}
                 >
                   <Upload className={`h-3 w-3 ${isPublishing ? 'animate-pulse' : ''}`} />
-                  {!isMobile && <span>{isPublishing ? 'Publishing…' : 'Publish'}</span>}
+                  {!isMobile && <span>{isPublishing ? t('gitPanelHeader.publishing') : t('gitPanelHeader.publish')}</span>}
                 </button>
               ) : (
                 <>
@@ -202,10 +204,10 @@ export default function GitPanelHeader({
                     onClick={() => void onFetch()}
                     disabled={anyPending}
                     className="flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                    title={`Fetch from ${remoteName}`}
+                    title={`${t('gitPanelHeader.fetch')} from ${remoteName}`}
                   >
                     <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
-                    {!isMobile && <span>{isFetching ? 'Fetching…' : 'Fetch'}</span>}
+                    {!isMobile && <span>{isFetching ? t('gitPanelHeader.fetching') : t('gitPanelHeader.fetch')}</span>}
                   </button>
 
                   {behindCount > 0 && (
@@ -213,10 +215,10 @@ export default function GitPanelHeader({
                       onClick={requestPullConfirmation}
                       disabled={anyPending}
                       className="flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1 text-sm text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-                      title={`Pull ${behindCount} from ${remoteName}`}
+                      title={`${t('gitPanelHeader.pull')} ${behindCount} from ${remoteName}`}
                     >
                       <Download className={`h-3 w-3 ${isPulling ? 'animate-pulse' : ''}`} />
-                      {!isMobile && <span>{isPulling ? 'Pulling…' : `Pull ${behindCount}`}</span>}
+                      {!isMobile && <span>{isPulling ? t('gitPanelHeader.pulling') : `${t('gitPanelHeader.pull')} ${behindCount}`}</span>}
                     </button>
                   )}
 
@@ -225,10 +227,10 @@ export default function GitPanelHeader({
                       onClick={requestPushConfirmation}
                       disabled={anyPending}
                       className="flex items-center gap-1 rounded-lg bg-orange-600 px-2.5 py-1 text-sm text-white transition-colors hover:bg-orange-700 disabled:opacity-50"
-                      title={`Push ${aheadCount} to ${remoteName}`}
+                      title={`${t('gitPanelHeader.push')} ${aheadCount} to ${remoteName}`}
                     >
                       <Upload className={`h-3 w-3 ${isPushing ? 'animate-pulse' : ''}`} />
-                      {!isMobile && <span>{isPushing ? 'Pushing…' : `Push ${aheadCount}`}</span>}
+                      {!isMobile && <span>{isPushing ? t('gitPanelHeader.pushing') : `${t('gitPanelHeader.push')} ${aheadCount}`}</span>}
                     </button>
                   )}
                 </>

@@ -503,6 +503,8 @@ function ChatInterface({
           setCodexInteractionMode={setCodexInteractionMode}
           codexApprovalPolicy={codexApprovalPolicy}
           setCodexApprovalPolicy={setCodexApprovalPolicy}
+          codexModel={codexModel}
+          setCodexModel={setCodexModel}
           thinkingMode={thinkingMode}
           setThinkingMode={setThinkingMode}
           codexReasoningEffort={codexReasoningEffort}

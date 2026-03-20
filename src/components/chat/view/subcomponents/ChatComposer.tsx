@@ -54,6 +54,8 @@ interface ChatComposerProps {
   setCodexInteractionMode: (value: CodexInteractionMode) => void;
   codexApprovalPolicy: CodexApprovalPolicy;
   setCodexApprovalPolicy: (value: CodexApprovalPolicy) => void;
+  codexModel: string;
+  setCodexModel: (model: string) => void;
   codexReasoningEffort: CodexReasoningEffort;
   setCodexReasoningEffort: (effort: CodexReasoningEffort) => void;
   tokenBudget: { used?: number; total?: number } | null;
@@ -118,6 +120,8 @@ export default function ChatComposer({
   setCodexInteractionMode,
   codexApprovalPolicy,
   setCodexApprovalPolicy,
+  codexModel,
+  setCodexModel,
   codexReasoningEffort,
   setCodexReasoningEffort,
   tokenBudget,
@@ -221,6 +225,8 @@ export default function ChatComposer({
           onInteractionModeChange={setCodexInteractionMode}
           approvalPolicy={codexApprovalPolicy}
           onApprovalPolicyChange={setCodexApprovalPolicy}
+          codexModel={codexModel}
+          onCodexModelChange={setCodexModel}
           codexReasoningEffort={codexReasoningEffort}
           setCodexReasoningEffort={setCodexReasoningEffort}
           slashCommandsCount={slashCommandsCount}

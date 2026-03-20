@@ -29,6 +29,7 @@ function renderRealtimeHarness(options: HarnessOptions = {}) {
     onSessionProcessing: vi.fn(),
     onSessionNotProcessing: vi.fn(),
     onReplaceTemporarySession: vi.fn(),
+    onCodexSessionCreated: vi.fn(),
     onNavigateToSession: vi.fn(),
     onWebSocketReconnect: vi.fn(),
   };
@@ -129,6 +130,7 @@ describe('useChatRealtimeHandlers', () => {
 
   it('binds a newly created session to the pending view and pending permissions', async () => {
     const harness = renderRealtimeHarness({
+      provider: 'codex',
       selectedSession: null,
       initialCurrentSessionId: null,
       initialPendingPermissionRequests: [
@@ -146,6 +148,7 @@ describe('useChatRealtimeHandlers', () => {
       expect.objectContaining({ requestId: 'req-1', sessionId: 'session-123' }),
     ]);
     expect(harness.callbacks.onReplaceTemporarySession).toHaveBeenCalledWith('session-123');
+    expect(harness.callbacks.onCodexSessionCreated).toHaveBeenCalledWith('session-123');
   });
 
   it('handles reconnect events only once per message object', async () => {

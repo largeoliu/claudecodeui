@@ -1,5 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChevronDown } from 'lucide-react';
+import { CODEX_MODELS } from '../../../../../shared/modelConstants';
 import type { CodexReasoningEffort } from '../../constants/codexReasoningEfforts';
 import type { CodexApprovalPolicy, CodexInteractionMode, PermissionMode, Provider } from '../../types/types';
 import CodexReasoningEffortSelector from './CodexReasoningEffortSelector';
@@ -16,6 +18,8 @@ interface ChatInputControlsProps {
   onInteractionModeChange?: (value: CodexInteractionMode) => void;
   approvalPolicy?: CodexApprovalPolicy;
   onApprovalPolicyChange?: (value: CodexApprovalPolicy) => void;
+  codexModel?: string;
+  onCodexModelChange?: (model: string) => void;
   codexReasoningEffort: CodexReasoningEffort;
   setCodexReasoningEffort: (effort: CodexReasoningEffort) => void;
   slashCommandsCount: number;
@@ -34,6 +38,8 @@ export default function ChatInputControls({
   onInteractionModeChange,
   approvalPolicy,
   onApprovalPolicyChange,
+  codexModel,
+  onCodexModelChange,
   codexReasoningEffort,
   setCodexReasoningEffort,
   slashCommandsCount,
@@ -73,6 +79,24 @@ export default function ChatInputControls({
 
       {provider === 'claude' && (
         <ThinkingModeSelector selectedMode={thinkingMode} onModeChange={setThinkingMode} onClose={() => { }} className="" />
+      )}
+
+      {provider === 'codex' && codexModel && onCodexModelChange && (
+        <div className="relative">
+          <select
+            value={codexModel}
+            onChange={(event) => onCodexModelChange(event.target.value)}
+            className="h-8 cursor-pointer appearance-none rounded-lg border border-border/60 bg-card px-3 pr-8 text-xs font-medium text-foreground transition-colors hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            title={t('providerSelection.selectModel')}
+          >
+            {CODEX_MODELS.OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+        </div>
       )}
 
       {provider === 'codex' && codexInteractionMode && onInteractionModeChange && (

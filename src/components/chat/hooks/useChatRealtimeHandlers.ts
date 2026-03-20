@@ -55,6 +55,7 @@ interface UseChatRealtimeHandlersArgs {
   onSessionProcessing?: (sessionId?: string | null) => void;
   onSessionNotProcessing?: (sessionId?: string | null) => void;
   onReplaceTemporarySession?: (sessionId?: string | null) => void;
+  onCodexSessionCreated?: (sessionId?: string | null) => void;
   onNavigateToSession?: (sessionId: string) => void;
   onWebSocketReconnect?: () => void;
 }
@@ -367,6 +368,7 @@ export function useChatRealtimeHandlers({
   onSessionProcessing,
   onSessionNotProcessing,
   onReplaceTemporarySession,
+  onCodexSessionCreated,
   onNavigateToSession,
   onWebSocketReconnect,
 }: UseChatRealtimeHandlersArgs) {
@@ -547,6 +549,9 @@ export function useChatRealtimeHandlers({
 
           setIsSystemSessionChange(true);
           onReplaceTemporarySession?.(latestMessage.sessionId);
+          if (provider === 'codex') {
+            onCodexSessionCreated?.(latestMessage.sessionId);
+          }
 
           setPendingPermissionRequests((previous) =>
             previous.map((request) =>

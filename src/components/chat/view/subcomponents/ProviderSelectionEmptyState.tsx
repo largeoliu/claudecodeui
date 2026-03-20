@@ -116,7 +116,6 @@ export default function ProviderSelectionEmptyState({
       localStorage.setItem("claude-model", value);
     } else if (provider === "codex") {
       setCodexModel(value);
-      localStorage.setItem("codex-model", value);
     } else if (provider === "gemini") {
       setGeminiModel(value);
       localStorage.setItem("gemini-model", value);

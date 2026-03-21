@@ -25,16 +25,6 @@ import enCodeEditor from './locales/en/codeEditor.json';
 import enTasks from './locales/en/tasks.json';
 import enGit from './locales/en/git.json';
 
-import koCommon from './locales/ko/common.json';
-import koSettings from './locales/ko/settings.json';
-import koAuth from './locales/ko/auth.json';
-import koSidebar from './locales/ko/sidebar.json';
-import koChat from './locales/ko/chat.json';
-// eslint-disable-next-line import-x/order
-import koCodeEditor from './locales/ko/codeEditor.json';
-import koTasks from './locales/ko/tasks.json';
-import koGit from './locales/ko/git.json';
-
 import zhCommon from './locales/zh-CN/common.json';
 import zhSettings from './locales/zh-CN/settings.json';
 import zhAuth from './locales/zh-CN/auth.json';
@@ -44,36 +34,6 @@ import zhChat from './locales/zh-CN/chat.json';
 import zhCodeEditor from './locales/zh-CN/codeEditor.json';
 import zhTasks from './locales/zh-CN/tasks.json';
 import zhGit from './locales/zh-CN/git.json';
-
-import jaCommon from './locales/ja/common.json';
-import jaSettings from './locales/ja/settings.json';
-import jaAuth from './locales/ja/auth.json';
-import jaSidebar from './locales/ja/sidebar.json';
-import jaChat from './locales/ja/chat.json';
-import jaCodeEditor from './locales/ja/codeEditor.json';
-// eslint-disable-next-line import-x/order
-import jaTasks from './locales/ja/tasks.json';
-import jaGit from './locales/ja/git.json';
-
-import ruCommon from './locales/ru/common.json';
-import ruSettings from './locales/ru/settings.json';
-import ruAuth from './locales/ru/auth.json';
-import ruSidebar from './locales/ru/sidebar.json';
-import ruChat from './locales/ru/chat.json';
-import ruCodeEditor from './locales/ru/codeEditor.json';
-// eslint-disable-next-line import-x/order
-import ruTasks from './locales/ru/tasks.json';
-import ruGit from './locales/ru/git.json';
-
-import deCommon from './locales/de/common.json';
-import deSettings from './locales/de/settings.json';
-import deAuth from './locales/de/auth.json';
-import deSidebar from './locales/de/sidebar.json';
-import deChat from './locales/de/chat.json';
-import deCodeEditor from './locales/de/codeEditor.json';
-// eslint-disable-next-line import-x/order
-import deTasks from './locales/de/tasks.json';
-import deGit from './locales/de/git.json';
 
 // Import supported languages configuration
 import { languages } from './languages.js';
@@ -109,16 +69,6 @@ i18n
         tasks: enTasks,
         git: enGit,
       },
-      ko: {
-        common: koCommon,
-        settings: koSettings,
-        auth: koAuth,
-        sidebar: koSidebar,
-        chat: koChat,
-        codeEditor: koCodeEditor,
-        tasks: koTasks,
-        git: koGit,
-      },
       'zh-CN': {
         common: zhCommon,
         settings: zhSettings,
@@ -128,36 +78,6 @@ i18n
         codeEditor: zhCodeEditor,
         tasks: zhTasks,
         git: zhGit,
-      },
-      ja: {
-        common: jaCommon,
-        settings: jaSettings,
-        auth: jaAuth,
-        sidebar: jaSidebar,
-        chat: jaChat,
-        codeEditor: jaCodeEditor,
-        tasks: jaTasks,
-        git: jaGit,
-      },
-      ru: {
-        common: ruCommon,
-        settings: ruSettings,
-        auth: ruAuth,
-        sidebar: ruSidebar,
-        chat: ruChat,
-        codeEditor: ruCodeEditor,
-        tasks: ruTasks,
-        git: ruGit,
-      },
-      de: {
-        common: deCommon,
-        settings: deSettings,
-        auth: deAuth,
-        sidebar: deSidebar,
-        chat: deChat,
-        codeEditor: deCodeEditor,
-        tasks: deTasks,
-        git: deGit,
       },
     },
 

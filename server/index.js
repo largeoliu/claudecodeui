@@ -486,48 +486,6 @@ app.use(express.static(path.join(__dirname, '../dist'), {
 // /api/config endpoint removed - no longer needed
 // Frontend now uses window.location for WebSocket URLs
 
-// System update endpoint
-app.post('/api/system/update', authenticateToken, async (req, res) => {
-    try {
-        // Get the project root directory (parent of server directory)
-        const projectRoot = path.join(__dirname, '..');
-        const requestAbort = createRequestAbortController(req, res);
-
-        console.log('Starting system update from directory:', projectRoot);
-
-        // Run the update command based on install mode
-        const updateCommand = installMode === 'git'
-            ? 'git checkout main && git pull && npm install'
-            : 'npm install -g @siteboon/claude-code-ui@latest';
-
-        try {
-            const result = await runCommand('sh', ['-c', updateCommand], {
-                cwd: installMode === 'git' ? projectRoot : os.homedir(),
-                timeoutMs: 10 * 60_000,
-                maxStdoutBytes: 512 * 1024,
-                maxStderrBytes: 512 * 1024,
-                signal: requestAbort.signal,
-            });
-
-            res.json({
-                success: true,
-                output: result.stdout || 'Update completed successfully',
-                message: 'Update completed. Please restart the server to apply changes.',
-                truncated: result.stdoutTruncated || result.stderrTruncated,
-            });
-        } finally {
-            requestAbort.cleanup();
-        }
-
-    } catch (error) {
-        console.error('System update error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
 app.get('/api/projects', authenticateToken, async (req, res) => {
     try {
         const lightweight = req.query.mode === 'light';

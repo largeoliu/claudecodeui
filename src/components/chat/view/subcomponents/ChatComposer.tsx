@@ -209,15 +209,16 @@ export default function ChatComposer({
       )}
 
 
-      <div className="mb-2 w-full">
-        <PermissionRequestsBanner
-          pendingPermissionRequests={pendingPermissionRequests}
-          handlePermissionDecision={handlePermissionDecision}
-          handleGrantToolPermission={handleGrantToolPermission}
-        />
-      </div>
+      <div className="w-full pr-[calc(var(--scrollbar-width,0px))]">
+        <div className="mb-2 w-full max-w-5xl mx-auto">
+          <PermissionRequestsBanner
+            pendingPermissionRequests={pendingPermissionRequests}
+            handlePermissionDecision={handlePermissionDecision}
+            handleGrantToolPermission={handleGrantToolPermission}
+          />
+        </div>
 
-      {!hasQuestionPanel && <form onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void} className="relative w-full group/composer">
+        {!hasQuestionPanel && <form onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void} className="relative w-full max-w-5xl mx-auto group/composer">
         {isDragActive && (
           <div className="absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-white/20 bg-white/5 backdrop-blur-sm">
             <div className="rounded-lg border border-white/10 bg-[#121212]/90 p-6 shadow-2xl premium-glow">
@@ -413,6 +414,7 @@ export default function ChatComposer({
           </div>
         )}
       </form>}
+      </div>
     </div>
   );
 }

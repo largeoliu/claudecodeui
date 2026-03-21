@@ -161,6 +161,24 @@ export default function ChatMessagesPane({
   }, [allMessagesLoaded, chatMessages.length, hasMoreMessages, isLoadingAllMessages, isLoadingMoreMessages, loadAllJustFinished, showLoadAllOverlay]);
 
   useEffect(() => {
+    const node = scrollContainerRef.current;
+    if (!node) return;
+    
+    const measureScrollbar = () => {
+      const width = node.offsetWidth - node.clientWidth;
+      if (width >= 0) {
+        document.documentElement.style.setProperty('--scrollbar-width', `${width}px`);
+      }
+    };
+    
+    const observer = new ResizeObserver(measureScrollbar);
+    observer.observe(node);
+    measureScrollbar();
+    
+    return () => observer.disconnect();
+  }, [scrollContainerRef]);
+
+  useEffect(() => {
     if (shouldVirtualizeMessages) {
       rowVirtualizer.measure();
     }
@@ -192,15 +210,17 @@ export default function ChatMessagesPane({
   return (
     <div
       ref={scrollContainerRef}
-      className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-0 py-3 sm:p-4"
+      className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
     >
-      {isLoadingSessionMessages && chatMessages.length === 0 ? (
-        <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
-          <div className="flex items-center justify-center space-x-2">
-            <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-gray-400" />
-            <p>{t('session.loading.sessionMessages')}</p>
+      <div className="w-full px-2 sm:px-4 md:px-4">
+        <div className="mx-auto w-full max-w-5xl py-3 sm:py-4">
+          {isLoadingSessionMessages && chatMessages.length === 0 ? (
+          <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-center space-x-2">
+              <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-gray-400" />
+              <p>{t('session.loading.sessionMessages')}</p>
+            </div>
           </div>
-        </div>
       ) : chatMessages.length === 0 ? (
         <ProviderSelectionEmptyState
           selectedSession={selectedSession}
@@ -329,6 +349,8 @@ export default function ChatMessagesPane({
       )}
 
       {isLoading && <AssistantThinkingIndicator selectedProvider={provider} />}
+        </div>
+      </div>
     </div>
   );
 }

@@ -133,7 +133,7 @@ export default function ProviderSelectionEmptyState({
   /* ── New session — provider picker ── */
   if (!selectedSession && !currentSessionId) {
     return (
-      <div className="flex h-full items-center justify-start px-4">
+      <div className="flex h-full items-center justify-start px-4 max-w-5xl mx-auto w-full">
         <div className="w-full">
           {/* Heading */}
           <div className="mb-8 text-left">
@@ -250,7 +250,7 @@ export default function ProviderSelectionEmptyState({
   /* ── Existing session — continue prompt ── */
   if (selectedSession) {
     return (
-      <div className="flex h-full items-center justify-start">
+      <div className="flex h-full items-center justify-start max-w-5xl mx-auto w-full px-4">
         <div className="max-w-md px-6 text-left">
           <p className="mb-1.5 text-lg font-semibold text-foreground">
             {t("session.continue.title")}

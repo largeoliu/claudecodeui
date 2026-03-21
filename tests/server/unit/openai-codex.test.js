@@ -7,6 +7,7 @@ const codexMocks = vi.hoisted(() => {
     shouldSyncCollaborationMode: vi.fn(),
     shouldSyncTurnSettings: vi.fn(),
     startTurn: vi.fn(),
+    resolveInteractiveThread: vi.fn(),
     setTrackedCollaborationMode: vi.fn(),
     updateTrackedTurnSettings: vi.fn(),
     isThreadActive: vi.fn(),
@@ -30,6 +31,7 @@ const codexMocks = vi.hoisted(() => {
     sendWriterMessage: vi.fn(),
     notifyRunFailed: vi.fn(),
     notifyRunStopped: vi.fn(),
+    extractCodexTurnCompletionStatesFromRollout: vi.fn(),
   };
 });
 
@@ -54,6 +56,10 @@ vi.mock('../../../server/services/notification-orchestrator.js', () => ({
   notifyRunStopped: codexMocks.notifyRunStopped,
 }));
 
+vi.mock('../../../server/services/codex-rollout.js', () => ({
+  extractCodexTurnCompletionStatesFromRollout: codexMocks.extractCodexTurnCompletionStatesFromRollout,
+}));
+
 import { abortCodexSession, queryCodex } from '../../../server/openai-codex.js';
 
 describe('openai-codex', () => {
@@ -70,6 +76,7 @@ describe('openai-codex', () => {
     codexMocks.codexAppServer.shouldSyncCollaborationMode.mockReset();
     codexMocks.codexAppServer.shouldSyncTurnSettings.mockReset();
     codexMocks.codexAppServer.startTurn.mockReset();
+    codexMocks.codexAppServer.resolveInteractiveThread.mockReset();
     codexMocks.codexAppServer.setTrackedCollaborationMode.mockReset();
     codexMocks.codexAppServer.updateTrackedTurnSettings.mockReset();
     codexMocks.codexAppServer.isThreadActive.mockReset();
@@ -84,6 +91,7 @@ describe('openai-codex', () => {
     codexMocks.sendWriterMessage.mockReset();
     codexMocks.notifyRunFailed.mockReset();
     codexMocks.notifyRunStopped.mockReset();
+    codexMocks.extractCodexTurnCompletionStatesFromRollout.mockReset();
 
     codexMocks.fs.mkdir.mockResolvedValue(undefined);
     codexMocks.fs.writeFile.mockResolvedValue(undefined);
@@ -104,8 +112,10 @@ describe('openai-codex', () => {
       turn: { id: 'turn-1' },
       completion: Promise.resolve({ status: 'completed' }),
     });
+    codexMocks.codexAppServer.resolveInteractiveThread.mockResolvedValue({ path: '/root/.codex/sessions/mock.jsonl' });
     codexMocks.codexAppServer.isThreadActive.mockReturnValue(false);
     codexMocks.codexAppServer.interruptTurn.mockResolvedValue(undefined);
+    codexMocks.extractCodexTurnCompletionStatesFromRollout.mockResolvedValue(new Map());
   });
 
   it('starts a new Codex thread, syncs settings, and cleans up temp images', async () => {
@@ -182,6 +192,8 @@ describe('openai-codex', () => {
       sessionId: 'thread-1',
       actualSessionId: 'thread-1',
       provider: 'codex',
+      lastAgentMessage: null,
+      missingFinalSummary: false,
     });
     expect(codexMocks.codexAppServer.updateTrackedTurnSettings).toHaveBeenCalledWith('thread-1', {
       model: 'gpt-5-codex',
@@ -236,6 +248,37 @@ describe('openai-codex', () => {
       sessionName: 'Resume flow',
       stopReason: 'interrupted',
     });
+  });
+
+  it('includes rollout completion metadata in the final Codex completion event', async () => {
+    codexMocks.extractCodexTurnCompletionStatesFromRollout.mockResolvedValue(new Map([
+      ['turn-1', {
+        completionTimestamp: '2026-03-20T14:29:53.440Z',
+        hasTaskComplete: true,
+        lastAgentMessage: null,
+        missingFinalSummary: true,
+      }],
+    ]));
+
+    await queryCodex(
+      'Inspect the bug',
+      {
+        cwd: '/work/demo-project',
+        model: 'gpt-5-codex',
+        sessionSummary: 'Bug investigation',
+      },
+      { userId: 'user-3', setSessionId: vi.fn() },
+    );
+
+    expect(codexMocks.sendWriterMessage).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        type: 'codex-complete',
+        sessionId: 'thread-1',
+        lastAgentMessage: null,
+        missingFinalSummary: true,
+      }),
+    );
   });
 
   it('surfaces Codex errors to the writer and failure notifications', async () => {

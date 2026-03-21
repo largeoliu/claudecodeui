@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { notifyRunFailed, notifyRunStopped } from './services/notification-orchestrator.js';
+import { extractCodexTurnCompletionStatesFromRollout } from './services/codex-rollout.js';
 import {
   codexAppServer,
   getCodexThreadOptions,
@@ -11,6 +12,48 @@ import {
 
 function normalizeInteractionMode(mode) {
   return mode === 'plan' ? 'plan' : 'edit';
+}
+
+function normalizeCodexCompletionState(turn) {
+  if (!turn || typeof turn !== 'object') {
+    return null;
+  }
+
+  const hasCamelCase = Object.prototype.hasOwnProperty.call(turn, 'lastAgentMessage');
+  const hasSnakeCase = Object.prototype.hasOwnProperty.call(turn, 'last_agent_message');
+
+  if (!hasCamelCase && !hasSnakeCase) {
+    return null;
+  }
+
+  const rawMessage = hasCamelCase ? turn.lastAgentMessage : turn.last_agent_message;
+  const lastAgentMessage = typeof rawMessage === 'string' && rawMessage.trim()
+    ? rawMessage.trim()
+    : null;
+
+  return {
+    lastAgentMessage,
+    missingFinalSummary: lastAgentMessage === null,
+  };
+}
+
+async function readCodexTurnCompletionState(threadId, turnId) {
+  if (!threadId || !turnId) {
+    return null;
+  }
+
+  try {
+    const thread = await readCodexThread(threadId, false);
+    if (!thread?.path) {
+      return null;
+    }
+
+    const completionStates = await extractCodexTurnCompletionStatesFromRollout(thread.path);
+    return completionStates.get(turnId) || null;
+  } catch (error) {
+    console.warn(`[Codex] Failed to read completion state for ${threadId}:`, error.message);
+    return null;
+  }
 }
 
 function buildCollaborationMode(mode, model, reasoningEffort) {
@@ -225,6 +268,10 @@ export async function queryCodex(command, options = {}, writer) {
 
     const completedTurn = await completion;
     const stopReason = completedTurn?.status === 'interrupted' ? 'interrupted' : 'completed';
+    const completionState = completedTurn?.status === 'interrupted'
+      ? null
+      : normalizeCodexCompletionState(completedTurn)
+        || await readCodexTurnCompletionState(threadId, completedTurn?.id || turn?.id || null);
 
     if (completedTurn?.status !== 'interrupted') {
       sendWriterMessage(writer, {
@@ -232,6 +279,8 @@ export async function queryCodex(command, options = {}, writer) {
         sessionId: threadId,
         actualSessionId: threadId,
         provider: 'codex',
+        lastAgentMessage: completionState?.lastAgentMessage ?? null,
+        missingFinalSummary: Boolean(completionState?.missingFinalSummary),
       });
     }
 

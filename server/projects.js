@@ -51,6 +51,8 @@ import {
   listCodexThreads,
   readCodexThread,
 } from './openai-codex.js';
+import { extractCodexTurnCompletionStatesFromRollout } from './services/codex-rollout.js';
+import { CODEX_MISSING_FINAL_SUMMARY_MESSAGE } from '../shared/codexCompletion.js';
 
 const PROJECTS_CACHE_TTL_MS = 30000;
 const projectsCache = new Map();
@@ -1747,6 +1749,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
     const thread = await readCodexThread(sessionId, true);
     const messages = [];
     const turnTimelines = await extractCodexTurnTimelinesFromRollout(thread.path);
+    const completionStates = await extractCodexTurnCompletionStatesFromRollout(thread.path);
     let sequence = 0;
     const baseTimestamp = (thread.createdAt || Math.floor(Date.now() / 1000)) * 1000;
     const makeFallbackTimestamp = () =>
@@ -1761,6 +1764,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
     for (const turn of thread.turns || []) {
       const timestampCursor = createCodexTurnTimestampCursor(turnTimelines.get(turn.id));
+      let lastAssistantText = null;
 
       for (const item of turn.items || []) {
         if (item.type === 'userMessage') {
@@ -1784,6 +1788,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
         if (item.type === 'agentMessage') {
           if (item.text?.trim()) {
+            lastAssistantText = item.text.trim();
             pushMessage({
               type: 'assistant',
               message: {
@@ -1797,6 +1802,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
         if (item.type === 'plan') {
           if (item.text?.trim()) {
+            lastAssistantText = item.text.trim();
             pushMessage({
               type: 'assistant',
               message: {
@@ -1923,6 +1929,25 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
             toolCallId: item.id,
           });
         }
+      }
+
+      const completionState = completionStates.get(turn.id);
+      if (completionState?.lastAgentMessage && completionState.lastAgentMessage !== lastAssistantText) {
+        pushMessage({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: completionState.lastAgentMessage,
+          },
+        }, completionState.completionTimestamp || timestampCursor.currentTimestamp());
+      } else if (completionState?.missingFinalSummary) {
+        pushMessage({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: CODEX_MISSING_FINAL_SUMMARY_MESSAGE,
+          },
+        }, completionState.completionTimestamp || timestampCursor.currentTimestamp());
       }
     }
 

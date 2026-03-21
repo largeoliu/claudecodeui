@@ -36,6 +36,7 @@ export interface ChatMessage {
   reasoning?: string;
   isThinking?: boolean;
   isStreaming?: boolean;
+  isCodexCompletionNotice?: boolean;
   isInteractivePrompt?: boolean;
   isToolUse?: boolean;
   toolName?: string;

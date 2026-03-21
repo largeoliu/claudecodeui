@@ -7,6 +7,7 @@ import { useChatRealtimeHandlers } from '../../../src/components/chat/hooks/useC
 import type { ChatMessage, PendingPermissionRequest } from '../../../src/components/chat/types/types';
 import { getChatMessagesStorageKey } from '../../../src/components/chat/utils/chatStorage';
 import type { Project, ProjectSession, SessionProvider } from '../../../src/types/app';
+import { CODEX_MISSING_FINAL_SUMMARY_MESSAGE } from '../../../shared/codexCompletion';
 
 type HarnessOptions = {
   provider?: SessionProvider;
@@ -583,6 +584,44 @@ describe('useChatRealtimeHandlers', () => {
     expect(harness.result.current.currentSessionId).toBe('session-final');
     expect(harness.result.current.isSystemSessionChange).toBe(true);
     expect(harness.callbacks.onNavigateToSession).toHaveBeenCalledWith('session-final');
+  });
+
+  it('appends a Codex completion notice when the turn ends without a final summary', async () => {
+    const harness = renderRealtimeHarness({
+      provider: 'codex',
+      initialCurrentSessionId: 'session-1',
+      initialIsLoading: true,
+      initialCanAbortSession: true,
+      initialClaudeStatus: { text: 'Processing', tokens: 0, can_interrupt: true },
+      initialChatMessages: [
+        {
+          type: 'assistant',
+          content: '我再看后端分页语义，确认 offset 方向。',
+          timestamp: new Date('2026-03-20T14:29:50.948Z'),
+        },
+      ],
+    });
+
+    await harness.emitMessage({
+      type: 'codex-complete',
+      sessionId: 'session-1',
+      actualSessionId: 'session-1',
+      missingFinalSummary: true,
+    });
+
+    expect(harness.result.current.chatMessages).toEqual([
+      expect.objectContaining({
+        type: 'assistant',
+        content: '我再看后端分页语义，确认 offset 方向。',
+      }),
+      expect.objectContaining({
+        type: 'assistant',
+        content: CODEX_MISSING_FINAL_SUMMARY_MESSAGE,
+        isCodexCompletionNotice: true,
+      }),
+    ]);
+    expect(harness.result.current.isLoading).toBe(false);
+    expect(harness.result.current.canAbortSession).toBe(false);
   });
 
   it('clears pending session ids and appends a confirmation when a session is aborted', async () => {

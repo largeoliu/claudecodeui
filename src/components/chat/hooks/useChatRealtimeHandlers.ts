@@ -10,6 +10,7 @@ import {
   upsertPendingInteractiveRequest,
 } from '../utils/interactiveRequestTransport';
 import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
+import { CODEX_MISSING_FINAL_SUMMARY_MESSAGE } from '../../../../shared/codexCompletion';
 
 type PendingViewSession = {
   sessionId: string | null;
@@ -247,6 +248,42 @@ const upsertCodexTextMessage = ({
       timestamp: new Date(),
     };
     return next;
+  });
+};
+
+const appendAssistantMessageIfMissing = (
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+  content: string,
+  extra: Partial<ChatMessage> = {},
+) => {
+  const normalizedContent = content.trim();
+  if (!normalizedContent) {
+    return;
+  }
+
+  setChatMessages((previous) => {
+    const lastMessage = previous[previous.length - 1];
+    if (
+      lastMessage?.type === 'assistant'
+      && !lastMessage.isToolUse
+      && String(lastMessage.content || '').trim() === normalizedContent
+    ) {
+      return previous;
+    }
+
+    if (previous.some((message) => message.isCodexCompletionNotice && message.content === normalizedContent)) {
+      return previous;
+    }
+
+    return [
+      ...previous,
+      {
+        type: 'assistant',
+        content: normalizedContent,
+        timestamp: new Date(),
+        ...extra,
+      },
+    ];
   });
 };
 
@@ -1529,6 +1566,20 @@ export function useChatRealtimeHandlers({
         const codexActualSessionId = latestMessage.actualSessionId || codexPendingSessionId;
         const codexCompletedSessionId =
           latestMessage.sessionId || currentSessionId || codexPendingSessionId;
+
+        if (typeof latestMessage.lastAgentMessage === 'string' && latestMessage.lastAgentMessage.trim()) {
+          appendAssistantMessageIfMissing(
+            setChatMessages,
+            decodeHtmlEntities(latestMessage.lastAgentMessage),
+            { isCodexCompletionNotice: true },
+          );
+        } else if (latestMessage.missingFinalSummary) {
+          appendAssistantMessageIfMissing(
+            setChatMessages,
+            CODEX_MISSING_FINAL_SUMMARY_MESSAGE,
+            { isCodexCompletionNotice: true },
+          );
+        }
 
         finalizeLifecycleForCurrentView(
           codexCompletedSessionId,

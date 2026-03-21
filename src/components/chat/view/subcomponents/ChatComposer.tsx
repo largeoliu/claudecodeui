@@ -184,16 +184,16 @@ export default function ChatComposer({
 
   // On mobile, when input is focused, float the input box at the bottom
   const mobileFloatingClass = isInputFocused
-    ? 'max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:z-50 max-sm:bg-background max-sm:border-t max-sm:border-white/10 max-sm:shadow-2xl'
+    ? 'max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:z-20 max-sm:bg-background max-sm:border-t max-sm:border-white/10 max-sm:shadow-2xl'
     : '';
   const showAbortButton = isLoading && canAbortSession;
   const showPendingAbortState = isLoading && !canAbortSession;
 
   return (
-    <div className={`relative flex-shrink-0 p-2 pb-1 sm:p-4 sm:pb-2 md:p-4 md:pb-2 ${mobileFloatingClass}`}>
+    <div className={`relative z-10 flex-shrink-0 p-2 pb-1 sm:p-4 sm:pb-2 md:p-4 md:pb-2 ${mobileFloatingClass}`}>
       {/* Scroll to bottom floating pill */}
       {isUserScrolledUp && hasMessages && (
-        <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex -translate-y-full justify-center pb-8">
+        <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex -translate-y-full justify-center pb-8">
           <button
             type="button"
             onClick={onScrollToBottom}
@@ -219,7 +219,7 @@ export default function ChatComposer({
 
       {!hasQuestionPanel && <form onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void} className="relative w-full group/composer">
         {isDragActive && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-white/20 bg-white/5 backdrop-blur-sm">
+          <div className="absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-white/20 bg-white/5 backdrop-blur-sm">
             <div className="rounded-lg border border-white/10 bg-[#121212]/90 p-6 shadow-2xl premium-glow">
               <svg className="mx-auto mb-2 h-8 w-8 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -230,7 +230,7 @@ export default function ChatComposer({
         )}
 
         {showFileDropdown && filteredFiles.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-48 overflow-y-auto rounded-lg border border-border/50 bg-card/95 shadow-lg backdrop-blur-md">
+          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 max-h-48 overflow-y-auto rounded-lg border border-border/50 bg-card/95 shadow-lg backdrop-blur-md">
             {filteredFiles.map((file, index) => (
               <div
                 key={file.path}

@@ -26,7 +26,7 @@ const menuBaseStyle: CSSProperties = {
   overflowY: 'auto',
   borderRadius: '8px',
   boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-  zIndex: 1000,
+  zIndex: 30,
   padding: '8px',
   transition: 'opacity 150ms ease-in-out, transform 150ms ease-in-out',
 };

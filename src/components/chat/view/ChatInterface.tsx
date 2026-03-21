@@ -491,8 +491,7 @@ function ChatInterface({
 
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col">
-
+      <div className="relative z-0 flex h-full min-h-0 flex-col isolate">
         <ChatMessagesPane
           scrollContainerRef={scrollContainerRef}
           isLoadingSessionMessages={isLoadingSessionMessages}

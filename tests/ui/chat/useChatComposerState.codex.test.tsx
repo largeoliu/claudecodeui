@@ -68,6 +68,7 @@ type ComposerHarnessOptions = {
   pendingViewSession?: { sessionId: string | null; startedAt: number } | null;
   initialPendingPermissionRequests?: PendingPermissionRequest[];
   initialCanAbortSession?: boolean;
+  sendMessageImpl?: (message: unknown) => boolean;
 };
 
 function renderComposerHarness(options: ComposerHarnessOptions = {}) {
@@ -77,7 +78,7 @@ function renderComposerHarness(options: ComposerHarnessOptions = {}) {
     fullPath: '/work/demo-project',
   } as any;
 
-  const sendMessage = vi.fn(() => true);
+  const sendMessage = vi.fn(options.sendMessageImpl ?? (() => true));
   const onSessionActive = vi.fn();
   const onSessionProcessing = vi.fn();
   const scrollToBottom = vi.fn();
@@ -112,6 +113,7 @@ function renderComposerHarness(options: ComposerHarnessOptions = {}) {
       codexReasoningEffort: 'high',
       geminiModel: 'gemini-2.5-pro',
       isLoading: isLoadingState,
+      isWebSocketConnected: true,
       canAbortSession: canAbortSessionState,
       tokenBudget: null,
       sendMessage,
@@ -189,6 +191,7 @@ describe('useChatComposerState codex flow', () => {
 
     expect(harness.sendMessage).toHaveBeenCalledWith({
       type: 'codex-command',
+      clientCommandId: expect.any(String),
       command: 'Inspect the failing test',
       sessionId: undefined,
       options: {
@@ -253,6 +256,7 @@ describe('useChatComposerState codex flow', () => {
     expect(harness.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'codex-command',
+        clientCommandId: expect.any(String),
         sessionId: 'codex-session-1',
         options: expect.objectContaining({
           sessionId: 'codex-session-1',
@@ -368,5 +372,58 @@ describe('useChatComposerState codex flow', () => {
       sessionId: 'codex-pending-session',
       provider: 'codex',
     });
+  });
+
+  it('queues unsent commands and retries them after reconnect', async () => {
+    const harness = renderComposerHarness({ sendMessageImpl: () => false });
+
+    act(() => {
+      harness.result.current.setInput('Retry this after reconnect');
+    });
+
+    await waitFor(() => {
+      expect(harness.result.current.input).toBe('Retry this after reconnect');
+    });
+
+    await act(async () => {
+      await harness.result.current.handleSubmit({ preventDefault: vi.fn() } as any);
+    });
+
+    expect(harness.result.current.pendingCommand).toEqual(
+      expect.objectContaining({
+        deliveryState: 'queued',
+        status: 'queued',
+        provider: 'codex',
+      }),
+    );
+    expect(harness.result.current.claudeStatusState).toEqual({
+      text: 'Waiting for reconnect',
+      tokens: 0,
+      can_interrupt: false,
+    });
+
+    harness.sendMessage.mockImplementation(() => true);
+
+    act(() => {
+      harness.result.current.retryPendingCommand();
+    });
+
+    expect(harness.result.current.pendingCommand).toEqual(
+      expect.objectContaining({
+        deliveryState: 'sent',
+      }),
+    );
+
+    act(() => {
+      harness.result.current.reconcilePendingCommandMessage({
+        type: 'command-accepted',
+        clientCommandId: harness.result.current.pendingCommand?.clientCommandId,
+        provider: 'codex',
+        sessionId: 'codex-thread-123',
+        status: 'accepted',
+      });
+    });
+
+    expect(harness.result.current.pendingCommand).toBeNull();
   });
 });

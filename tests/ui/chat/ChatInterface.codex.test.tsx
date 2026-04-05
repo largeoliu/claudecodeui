@@ -133,6 +133,9 @@ const chatInterfaceMocks = vi.hoisted(() => {
     handleGrantToolPermission: vi.fn(),
     handleInputFocusChange: vi.fn(),
     isInputFocused: false,
+    pendingCommand: null,
+    retryPendingCommand: vi.fn(),
+    reconcilePendingCommandMessage: vi.fn(),
   };
 
   return {
@@ -274,6 +277,9 @@ function resetChatInterfaceMocks() {
   chatInterfaceMocks.composerState.handlePermissionDecision.mockClear();
   chatInterfaceMocks.composerState.handleGrantToolPermission.mockClear();
   chatInterfaceMocks.composerState.handleInputFocusChange.mockClear();
+  chatInterfaceMocks.composerState.retryPendingCommand.mockClear();
+  chatInterfaceMocks.composerState.reconcilePendingCommandMessage.mockClear();
+  chatInterfaceMocks.composerState.pendingCommand = null;
 }
 
 function renderChatInterface(overrides: Partial<ComponentProps<typeof ChatInterface>> = {}) {
@@ -383,14 +389,19 @@ describe('ChatInterface codex orchestration', () => {
     ]);
     expect(chatInterfaceMocks.sessionState.setIsLoading).toHaveBeenCalledWith(false);
     expect(chatInterfaceMocks.sessionState.setCanAbortSession).toHaveBeenCalledWith(false);
-    expect(sendMessage).toHaveBeenCalledWith({
+    expect(sendMessage).toHaveBeenNthCalledWith(1, {
+      type: 'check-session-status',
+      sessionId: 'codex-session-1',
+      provider: 'codex',
+    });
+    expect(sendMessage).toHaveBeenNthCalledWith(2, {
       type: 'get-pending-permissions',
       sessionId: 'codex-session-1',
       provider: 'codex',
     });
   });
 
-  it('ignores reconnect results that arrive after the user switches sessions', async () => {
+  it('re-syncs pending permissions for the newly selected session after reconnect resolves', async () => {
     let resolveMessages: ((messages: any[]) => void) | null = null;
     chatInterfaceMocks.sessionState.loadSessionMessages.mockImplementation(
       () => new Promise((resolve) => {
@@ -409,7 +420,11 @@ describe('ChatInterface codex orchestration', () => {
     chatInterfaceMocks.sessionState.setIsLoading.mockClear();
     chatInterfaceMocks.sessionState.setCanAbortSession.mockClear();
 
-    const reconnectPromise = chatInterfaceMocks.realtimeArgs.onWebSocketReconnect();
+    chatInterfaceMocks.realtimeArgs.onWebSocketReconnect();
+
+    await waitFor(() => {
+      expect(chatInterfaceMocks.sessionState.loadSessionMessages).toHaveBeenCalled();
+    });
 
     rerender(
       <ChatInterface
@@ -421,16 +436,36 @@ describe('ChatInterface codex orchestration', () => {
       />,
     );
 
-    await act(async () => {
-      resolveMessages?.([{ type: 'assistant', content: 'Recovered output', timestamp: 1 }]);
-      await reconnectPromise;
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'get-pending-permissions',
+        sessionId: 'codex-session-2',
+        provider: 'codex',
+      });
     });
 
-    expect(chatInterfaceMocks.sessionState.setChatMessages).not.toHaveBeenCalled();
-    expect(chatInterfaceMocks.sessionState.setIsLoading).not.toHaveBeenCalled();
-    expect(chatInterfaceMocks.sessionState.setCanAbortSession).not.toHaveBeenCalled();
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith({
+    await act(async () => {
+      resolveMessages?.([{ type: 'assistant', content: 'Recovered output', timestamp: 1 }]);
+      await Promise.resolve();
+    });
+
+    expect(chatInterfaceMocks.sessionState.setChatMessages).toHaveBeenCalledWith([
+      { type: 'assistant', content: 'Recovered output', timestamp: 1 },
+    ]);
+    expect(chatInterfaceMocks.sessionState.setIsLoading).toHaveBeenCalledWith(false);
+    expect(chatInterfaceMocks.sessionState.setCanAbortSession).toHaveBeenCalledWith(false);
+    expect(sendMessage).toHaveBeenCalledTimes(3);
+    expect(sendMessage).toHaveBeenNthCalledWith(1, {
+      type: 'get-pending-permissions',
+      sessionId: 'codex-session-2',
+      provider: 'codex',
+    });
+    expect(sendMessage).toHaveBeenNthCalledWith(2, {
+      type: 'check-session-status',
+      sessionId: 'codex-session-2',
+      provider: 'codex',
+    });
+    expect(sendMessage).toHaveBeenNthCalledWith(3, {
       type: 'get-pending-permissions',
       sessionId: 'codex-session-2',
       provider: 'codex',
@@ -451,6 +486,8 @@ describe('ChatInterface codex orchestration', () => {
 
     const { sendMessage } = renderChatInterface({ ws: null });
 
+    expect(chatInterfaceMocks.realtimeArgs).toBeTruthy();
+
     await act(async () => {
       vi.advanceTimersByTime(5_000);
     });
@@ -469,11 +506,13 @@ describe('ChatInterface codex orchestration', () => {
     ]);
   });
 
-  it('aborts the current Codex session when Escape is pressed during generation', () => {
+  it('aborts the current Codex session when Escape is pressed during generation', async () => {
     chatInterfaceMocks.sessionState.isLoading = true;
     chatInterfaceMocks.sessionState.canAbortSession = true;
 
     renderChatInterface();
+
+    expect(chatInterfaceMocks.realtimeArgs).toBeTruthy();
 
     fireEvent.keyDown(document, { key: 'Escape' });
 

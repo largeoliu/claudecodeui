@@ -59,6 +59,7 @@ function buildProps(overrides: Partial<ComponentProps<typeof ChatComposer>> = {}
     onClearInput: vi.fn(),
     isUserScrolledUp: false,
     hasMessages: false,
+    isConnected: true,
     onScrollToBottom: vi.fn(),
     onSubmit: vi.fn((event) => event.preventDefault?.()),
     isDragActive: false,
@@ -121,5 +122,11 @@ describe('ChatComposer', () => {
     render(<ChatComposer {...buildProps({ isLoading: true, canAbortSession: false })} />);
 
     expect(screen.queryByRole('button', { name: 'Stop Generation' })).not.toBeInTheDocument();
+  });
+
+  it('disables submit while the websocket reconnects', () => {
+    const { container } = render(<ChatComposer {...buildProps({ isConnected: false })} />);
+
+    expect(container.querySelector('button[type="submit"]')).toBeDisabled();
   });
 });

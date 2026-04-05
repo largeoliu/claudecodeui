@@ -31,7 +31,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
   if (shouldInline) {
     return (
       <code
-        className={`whitespace-pre-wrap break-words rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[0.9em] text-white/90 dark:bg-white/10 dark:text-white/90 ${className || ''
+        className={`whitespace-pre-wrap break-words font-mono text-[0.9em] text-blue-600 dark:text-blue-400 ${className || ''
           }`}
         {...props}
       >

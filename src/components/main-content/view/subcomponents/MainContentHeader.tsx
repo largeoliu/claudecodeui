@@ -35,8 +35,8 @@ export default function MainContentHeader({
   }, [updateScrollState]);
 
   return (
-    <header className="sticky top-0 z-30 flex h-12 w-full flex-shrink-0 items-center justify-between border-b border-white/[0.04] nav-glass px-4 transition-all duration-300">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-30 flex h-12 w-full flex-shrink-0 items-center justify-between border-b border-white/[0.02] nav-glass px-4 transition-all duration-300">
+      <div className="flex h-full items-center gap-4">
         {isMobile && <MobileMenuButton onMenuClick={onMenuClick} />}
         <MainContentTitle
           activeTab={activeTab}

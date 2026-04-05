@@ -55,12 +55,59 @@ import { extractCodexTurnCompletionStatesFromRollout } from './services/codex-ro
 import { CODEX_MISSING_FINAL_SUMMARY_MESSAGE } from '../shared/codexCompletion.js';
 
 const PROJECTS_CACHE_TTL_MS = 30000;
+const CODEX_THREADS_INDEX_TTL_MS = 1000;
+const CODEX_SESSION_MESSAGES_TTL_MS = 1000;
 const projectsCache = new Map();
 const inFlightProjectsRequests = new Map();
+let codexThreadsIndexCache = {
+  expiresAt: 0,
+  value: null,
+  promise: null,
+};
+const codexSessionMessagesCache = new Map();
 
 function invalidateProjectsCache() {
   projectsCache.clear();
   inFlightProjectsRequests.clear();
+}
+
+function getCodexSessionMessagesCacheKey(sessionId, limit, offset) {
+  const normalizedLimit = limit === null ? 'all' : Number(limit);
+  const normalizedOffset = Number(offset) || 0;
+  return `${sessionId}:${normalizedLimit}:${normalizedOffset}`;
+}
+
+function getCachedCodexSessionMessages(cacheKey) {
+  const entry = codexSessionMessagesCache.get(cacheKey);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt > Date.now()) {
+    return entry.value;
+  }
+
+  if (!entry.promise) {
+    codexSessionMessagesCache.delete(cacheKey);
+  }
+  return null;
+}
+
+function setCachedCodexSessionMessages(cacheKey, value, promise = null) {
+  codexSessionMessagesCache.set(cacheKey, {
+    value,
+    promise,
+    expiresAt: Date.now() + CODEX_SESSION_MESSAGES_TTL_MS,
+  });
+}
+
+function isRetryableCodexMetadataError(error) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  return (
+    error?.code === -32001
+    || /server overloaded|retry later|temporar(?:y|ily) unavailable|busy/i.test(message)
+    || /missing rollout path|state db missing rollout path/i.test(message)
+  );
 }
 
 function getProjectsCacheKey(options = {}) {
@@ -1440,6 +1487,15 @@ async function findCodexJsonlFiles(dir) {
 }
 
 async function buildCodexThreadsIndex() {
+  if (codexThreadsIndexCache.value && codexThreadsIndexCache.expiresAt > Date.now()) {
+    return codexThreadsIndexCache.value;
+  }
+
+  if (codexThreadsIndexCache.promise) {
+    return codexThreadsIndexCache.promise;
+  }
+
+  const loadPromise = (async () => {
   const sessionsByProject = new Map();
   const lastActivityByProject = new Map();
 
@@ -1488,7 +1544,21 @@ async function buildCodexThreadsIndex() {
     sessions.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
   }
 
-  return { sessionsByProject, lastActivityByProject };
+    const result = { sessionsByProject, lastActivityByProject };
+    codexThreadsIndexCache = {
+      value: result,
+      promise: null,
+      expiresAt: Date.now() + CODEX_THREADS_INDEX_TTL_MS,
+    };
+    return result;
+  })().finally(() => {
+    if (codexThreadsIndexCache.promise === loadPromise) {
+      codexThreadsIndexCache.promise = null;
+    }
+  });
+
+  codexThreadsIndexCache.promise = loadPromise;
+  return loadPromise;
 }
 
 // Fetch Codex sessions for a given project path
@@ -1745,6 +1815,18 @@ function createCodexTurnTimestampCursor(turnTimeline) {
 }
 // Get messages for a specific Codex session
 async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
+  const cacheKey = getCodexSessionMessagesCacheKey(sessionId, limit, offset);
+  const cached = getCachedCodexSessionMessages(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const cachedEntry = codexSessionMessagesCache.get(cacheKey);
+  if (cachedEntry?.promise) {
+    return cachedEntry.promise;
+  }
+
+  const loadPromise = (async () => {
   try {
     const thread = await readCodexThread(sessionId, true);
     const messages = [];
@@ -1996,7 +2078,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
       const hasMore = startIndex > 0;
 
-      return {
+      const result = {
         messages: paginatedMessages,
         total,
         hasMore,
@@ -2004,17 +2086,43 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
         limit,
         tokenUsage
       };
+      setCachedCodexSessionMessages(cacheKey, result);
+      return result;
     }
 
-    return { messages, tokenUsage };
+    const result = { messages, tokenUsage };
+    setCachedCodexSessionMessages(cacheKey, result);
+    return result;
 
   } catch (error) {
     if (error?.code === 'CODEX_THREAD_UNSUPPORTED' || error?.code === 'CODEX_THREAD_NOT_FOUND') {
       throw error;
     }
-    console.error(`Error reading Codex session messages for ${sessionId}:`, error);
-    return { messages: [], total: 0, hasMore: false };
+    if (cachedEntry?.value) {
+      console.warn(`Using cached Codex session messages for ${sessionId} after read failure:`, error.message);
+      setCachedCodexSessionMessages(cacheKey, cachedEntry.value);
+      return cachedEntry.value;
+    }
+
+    const log = isRetryableCodexMetadataError(error) ? console.warn : console.error;
+    log(`Error reading Codex session messages for ${sessionId}:`, error);
+    const fallback = { messages: [], total: 0, hasMore: false };
+    setCachedCodexSessionMessages(cacheKey, fallback);
+    return fallback;
   }
+  })().finally(() => {
+    const latestEntry = codexSessionMessagesCache.get(cacheKey);
+    if (latestEntry?.promise === loadPromise) {
+      codexSessionMessagesCache.set(cacheKey, {
+        value: latestEntry.value || null,
+        promise: null,
+        expiresAt: latestEntry.expiresAt,
+      });
+    }
+  });
+
+  setCachedCodexSessionMessages(cacheKey, cachedEntry?.value || null, loadPromise);
+  return loadPromise;
 }
 
 async function deleteCodexSession(sessionId) {

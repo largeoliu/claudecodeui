@@ -3,6 +3,7 @@
 import './load-env.js';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -59,7 +60,13 @@ import {
     respondToCodexCommandStdin,
     respondToCodexUserInput,
 } from './openai-codex.js';
-import { spawnGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli.js';
+import {
+    spawnGemini,
+    abortGeminiSession,
+    isGeminiSessionActive,
+    getActiveGeminiSessions,
+    reconnectGeminiSessionWriter,
+} from './gemini-cli.js';
 import sessionManager from './sessionManager.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
@@ -80,7 +87,12 @@ import codexRoutes from './routes/codex.js';
 import geminiRoutes from './routes/gemini.js';
 import pluginsRoutes from './routes/plugins.js';
 import { startEnabledPluginServers, stopAllPlugins } from './utils/plugin-process-manager.js';
-import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
+import {
+    initializeDatabase,
+    sessionNamesDb,
+    applyCustomSessionNames,
+    chatCommandReceiptsDb,
+} from './database/db.js';
 import { configureWebPush } from './services/vapid-keys.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -252,9 +264,174 @@ const PTY_BUFFER_LIMIT_BYTES = parseInt(process.env.PTY_BUFFER_LIMIT_BYTES, 10) 
 const MAX_PTY_SESSIONS = parseInt(process.env.MAX_PTY_SESSIONS, 10) || 20;
 const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;
 const WS_HEARTBEAT_INTERVAL_MS = parseInt(process.env.WS_HEARTBEAT_INTERVAL_MS, 10) || 30_000;
+const CHAT_COMMAND_RECEIPT_RETENTION_DAYS = parseInt(process.env.CHAT_COMMAND_RECEIPT_RETENTION_DAYS, 10) || 7;
 const TRANSCRIBE_MAX_FILE_SIZE = parseInt(process.env.TRANSCRIBE_MAX_FILE_SIZE, 10) || 25 * 1024 * 1024;
 const ANSI_ESCAPE_SEQUENCE_REGEX = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g;
 const TRAILING_URL_PUNCTUATION_REGEX = /[)\]}>.,;:!?]+$/;
+
+function stableStringify(value) {
+    if (Array.isArray(value)) {
+        return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+    }
+
+    if (value && typeof value === 'object') {
+        const entries = Object.entries(value)
+            .filter(([, entryValue]) => typeof entryValue !== 'undefined' && typeof entryValue !== 'function')
+            .sort(([left], [right]) => left.localeCompare(right));
+        return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`).join(',')}}`;
+    }
+
+    return JSON.stringify(value ?? null);
+}
+
+function buildChatCommandPayloadHash(provider, data) {
+    return crypto
+        .createHash('sha256')
+        .update(stableStringify({
+            provider,
+            command: data?.command || null,
+            options: data?.options || null,
+        }))
+        .digest('hex');
+}
+
+function getRequestedSessionIdForCommand(data) {
+    return data?.options?.sessionId || data?.sessionId || null;
+}
+
+function sendCommandAccepted(writer, {
+    clientCommandId,
+    provider,
+    sessionId = null,
+    status = 'accepted',
+    duplicate = false,
+}) {
+    if (!clientCommandId) {
+        return;
+    }
+
+    writer.send({
+        type: 'command-accepted',
+        clientCommandId,
+        provider,
+        sessionId,
+        status,
+        duplicate,
+    });
+}
+
+function reconnectExistingCommandWriter(provider, sessionId, rawWs, writer) {
+    if (!sessionId) {
+        return false;
+    }
+
+    if (provider === 'codex') {
+        if (!isCodexSessionActive(sessionId)) {
+            return false;
+        }
+
+        reconnectCodexSessionWriter(sessionId, writer);
+        return true;
+    }
+
+    if (provider === 'gemini') {
+        if (!isGeminiSessionActive(sessionId)) {
+            return false;
+        }
+
+        return reconnectGeminiSessionWriter(sessionId, rawWs);
+    }
+
+    if (!isClaudeSDKSessionActive(sessionId)) {
+        return false;
+    }
+
+    return reconnectSessionWriter(sessionId, rawWs);
+}
+
+function prepareChatCommandDispatch(data, provider, request, rawWs, writer) {
+    const clientCommandId = typeof data?.clientCommandId === 'string'
+        ? data.clientCommandId.trim()
+        : '';
+    const userId = request?.user?.id ?? request?.user?.userId ?? null;
+    const requestedSessionId = getRequestedSessionIdForCommand(data);
+
+    if (!clientCommandId || !userId) {
+        return {
+            shouldExecute: true,
+            clientCommandId: clientCommandId || null,
+            userId,
+            requestedSessionId,
+        };
+    }
+
+    chatCommandReceiptsDb.pruneOlderThanDays(CHAT_COMMAND_RECEIPT_RETENTION_DAYS);
+    const payloadHash = buildChatCommandPayloadHash(provider, data);
+    const { created, receipt } = chatCommandReceiptsDb.createOrGet({
+        userId,
+        clientCommandId,
+        provider,
+        payloadHash,
+        requestedSessionId,
+        actualSessionId: requestedSessionId,
+        status: 'accepted',
+    });
+
+    if (!receipt) {
+        return {
+            shouldExecute: true,
+            clientCommandId,
+            userId,
+            requestedSessionId,
+        };
+    }
+
+    if (!created) {
+        if (receipt.provider !== provider || receipt.payload_hash !== payloadHash) {
+            writer.send({
+                type: 'error',
+                error: 'Rejected duplicate client command id with mismatched payload.',
+            });
+            return {
+                shouldExecute: false,
+                clientCommandId,
+                userId,
+                requestedSessionId,
+            };
+        }
+
+        const actualSessionId = receipt.actual_session_id || receipt.requested_session_id || null;
+        reconnectExistingCommandWriter(provider, actualSessionId, rawWs, writer);
+        sendCommandAccepted(writer, {
+            clientCommandId,
+            provider,
+            sessionId: actualSessionId,
+            status: receipt.status,
+            duplicate: true,
+        });
+        return {
+            shouldExecute: false,
+            clientCommandId,
+            userId,
+            requestedSessionId,
+        };
+    }
+
+    sendCommandAccepted(writer, {
+        clientCommandId,
+        provider,
+        sessionId: requestedSessionId,
+        status: receipt.status,
+        duplicate: false,
+    });
+
+    return {
+        shouldExecute: true,
+        clientCommandId,
+        userId,
+        requestedSessionId,
+    };
+}
 
 function stripAnsiSequences(value = '') {
     return value.replace(ANSI_ESCAPE_SEQUENCE_REGEX, '');
@@ -366,6 +543,21 @@ const wsHeartbeatInterval = setInterval(() => {
             client.ping();
         } catch {
             client.terminate();
+        }
+    });
+
+    connectedClients.forEach((client) => {
+        if (client.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        try {
+            client.send(JSON.stringify({
+                type: 'heartbeat',
+                timestamp: Date.now(),
+            }));
+        } catch (error) {
+            console.warn('[WARN] Failed to send chat heartbeat:', error?.message || error);
         }
     });
 }, WS_HEARTBEAT_INTERVAL_MS);
@@ -1466,19 +1658,46 @@ function handleChatConnection(ws, request) {
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
 
                 // Use Claude Agents SDK
-                await queryClaudeSDK(data.command, data.options, writer);
+                const commandDispatch = prepareChatCommandDispatch(data, 'claude', request, ws, writer);
+                if (!commandDispatch.shouldExecute) {
+                    return;
+                }
+
+                await queryClaudeSDK(data.command, {
+                    ...data.options,
+                    clientCommandId: commandDispatch.clientCommandId,
+                    userId: commandDispatch.userId,
+                }, writer);
             } else if (data.type === 'codex-command') {
                 console.log('[DEBUG] Codex message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
-                await queryCodex(data.command, data.options, writer);
+                const commandDispatch = prepareChatCommandDispatch(data, 'codex', request, ws, writer);
+                if (!commandDispatch.shouldExecute) {
+                    return;
+                }
+
+                await queryCodex(data.command, {
+                    ...data.options,
+                    clientCommandId: commandDispatch.clientCommandId,
+                    userId: commandDispatch.userId,
+                }, writer);
             } else if (data.type === 'gemini-command') {
                 console.log('[DEBUG] Gemini message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
-                await spawnGemini(data.command, data.options, writer);
+                const commandDispatch = prepareChatCommandDispatch(data, 'gemini', request, ws, writer);
+                if (!commandDispatch.shouldExecute) {
+                    return;
+                }
+
+                await spawnGemini(data.command, {
+                    ...data.options,
+                    clientCommandId: commandDispatch.clientCommandId,
+                    userId: commandDispatch.userId,
+                }, writer);
             } else if (data.type === 'abort-session') {
                 console.log('[DEBUG] Abort session request:', data.sessionId);
                 const provider = data.provider || 'claude';
@@ -1626,6 +1845,9 @@ function handleChatConnection(ws, request) {
                     }
                 } else if (provider === 'gemini') {
                     isActive = isGeminiSessionActive(sessionId);
+                    if (isActive) {
+                        reconnectGeminiSessionWriter(sessionId, ws);
+                    }
                 } else {
                     // Use Claude Agents SDK
                     isActive = isClaudeSDKSessionActive(sessionId);

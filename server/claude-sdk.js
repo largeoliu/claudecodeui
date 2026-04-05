@@ -18,6 +18,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
+import { chatCommandReceiptsDb } from './database/db.js';
 import {
   createNotificationEvent,
   notifyRunFailed,
@@ -467,7 +468,7 @@ async function loadMcpConfig(cwd) {
  * @returns {Promise<void>}
  */
 async function queryClaudeSDK(command, options = {}, ws) {
-  const { sessionId, sessionSummary } = options;
+  const { sessionId, sessionSummary, clientCommandId, userId } = options;
   let capturedSessionId = sessionId;
   let sessionCreatedSent = false;
   let tempImagePaths = [];
@@ -642,6 +643,10 @@ async function queryClaudeSDK(command, options = {}, ws) {
         capturedSessionId = message.session_id;
         addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir, ws);
 
+        if (userId && clientCommandId) {
+          chatCommandReceiptsDb.updateSession(userId, clientCommandId, capturedSessionId);
+        }
+
         // Set session ID on writer
         if (ws.setSessionId && typeof ws.setSessionId === 'function') {
           ws.setSessionId(capturedSessionId);
@@ -652,7 +657,9 @@ async function queryClaudeSDK(command, options = {}, ws) {
           sessionCreatedSent = true;
           ws.send({
             type: 'session-created',
-            sessionId: capturedSessionId
+            sessionId: capturedSessionId,
+            provider: 'claude',
+            clientCommandId,
           });
         } else {
           console.log('Not sending session-created. sessionId:', sessionId, 'sessionCreatedSent:', sessionCreatedSent);
@@ -701,8 +708,13 @@ async function queryClaudeSDK(command, options = {}, ws) {
       type: 'claude-complete',
       sessionId: capturedSessionId,
       exitCode: 0,
-      isNewSession: !sessionId && !!command
+      isNewSession: !sessionId && !!command,
+      provider: 'claude',
+      clientCommandId,
     });
+    if (userId && clientCommandId) {
+      chatCommandReceiptsDb.updateStatus(userId, clientCommandId, 'completed', capturedSessionId || sessionId || null);
+    }
     notifyRunStopped({
       userId: ws?.userId || null,
       provider: 'claude',
@@ -727,8 +739,13 @@ async function queryClaudeSDK(command, options = {}, ws) {
     ws.send({
       type: 'claude-error',
       error: error.message,
-      sessionId: capturedSessionId || sessionId || null
+      sessionId: capturedSessionId || sessionId || null,
+      provider: 'claude',
+      clientCommandId,
     });
+    if (userId && clientCommandId) {
+      chatCommandReceiptsDb.updateStatus(userId, clientCommandId, 'failed', capturedSessionId || sessionId || null);
+    }
     notifyRunFailed({
       userId: ws?.userId || null,
       provider: 'claude',

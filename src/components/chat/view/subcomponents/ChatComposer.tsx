@@ -66,6 +66,7 @@ interface ChatComposerProps {
   onClearInput: () => void;
   isUserScrolledUp: boolean;
   hasMessages: boolean;
+  isConnected: boolean;
   onScrollToBottom: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement> | TouchEvent<HTMLButtonElement>) => void;
   isDragActive: boolean;
@@ -132,6 +133,7 @@ export default function ChatComposer({
   onClearInput,
   isUserScrolledUp,
   hasMessages,
+  isConnected,
   onScrollToBottom,
   onSubmit,
   isDragActive,
@@ -184,20 +186,20 @@ export default function ChatComposer({
 
   // On mobile, when input is focused, float the input box at the bottom
   const mobileFloatingClass = isInputFocused
-    ? 'max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:z-20 max-sm:bg-background max-sm:border-t max-sm:border-white/10 max-sm:shadow-2xl'
+    ? 'max-sm:fixed max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:z-20 max-sm:bg-background max-sm:border-t max-sm:border-border max-sm:shadow-2xl'
     : '';
   const showAbortButton = isLoading && canAbortSession;
   const showPendingAbortState = isLoading && !canAbortSession;
 
   return (
-    <div className={`relative z-10 flex-shrink-0 p-2 pb-1 sm:p-4 sm:pb-2 md:p-4 md:pb-2 ${mobileFloatingClass}`}>
+    <div className={`relative z-10 flex-shrink-0 px-2 pb-1 pt-0 sm:px-4 sm:pb-2 sm:pt-0 md:px-4 md:pb-2 md:pt-0 ${mobileFloatingClass}`}>
       {/* Scroll to bottom floating pill */}
       {isUserScrolledUp && hasMessages && (
         <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex -translate-y-full justify-center pb-8">
           <button
             type="button"
             onClick={onScrollToBottom}
-            className="pointer-events-auto flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white shadow-[0_4px_20px_rgba(0,0,0,0.4)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/20 hover:scale-105 active:scale-95"
+            className="pointer-events-auto flex items-center justify-center gap-2 rounded-full border border-border bg-white/10 px-4 py-2 text-[12px] font-semibold text-white shadow-[0_4px_20px_rgba(0,0,0,0.4)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/20 hover:scale-105 active:scale-95"
             title={t('input.scrollToBottom', { defaultValue: 'Scroll to bottom' })}
           >
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -210,18 +212,20 @@ export default function ChatComposer({
 
 
       <div className="w-full pr-[calc(var(--scrollbar-width,0px))]">
-        <div className="mb-2 w-full max-w-5xl mx-auto">
-          <PermissionRequestsBanner
-            pendingPermissionRequests={pendingPermissionRequests}
-            handlePermissionDecision={handlePermissionDecision}
-            handleGrantToolPermission={handleGrantToolPermission}
-          />
-        </div>
+        {pendingPermissionRequests.length > 0 && (
+          <div className="mb-2 w-full max-w-5xl mx-auto">
+            <PermissionRequestsBanner
+              pendingPermissionRequests={pendingPermissionRequests}
+              handlePermissionDecision={handlePermissionDecision}
+              handleGrantToolPermission={handleGrantToolPermission}
+            />
+          </div>
+        )}
 
         {!hasQuestionPanel && <form onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void} className="relative w-full max-w-5xl mx-auto group/composer">
         {isDragActive && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-white/20 bg-white/5 backdrop-blur-sm">
-            <div className="rounded-lg border border-white/10 bg-[#121212]/90 p-6 shadow-2xl premium-glow">
+          <div className="absolute inset-0 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-border bg-white/5 backdrop-blur-sm">
+            <div className="rounded-lg border border-border bg-[#121212]/90 p-6 shadow-2xl premium-glow">
               <svg className="mx-auto mb-2 h-8 w-8 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
@@ -270,8 +274,8 @@ export default function ChatComposer({
         <div
           {...getRootProps()}
           className={cn(
-            "relative overflow-hidden rounded-lg border border-white/[0.06] bg-[#1a1a1a]/40 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-3xl transition-all duration-500",
-            isInputFocused ? "border-white/15 bg-[#1a1a1a]/60 shadow-[0_20px_60px_rgba(0,0,0,0.6)] ring-1 ring-white/5" : "hover:border-white/10",
+            "relative overflow-hidden rounded-2xl border border-[#3f3f46] bg-[#1a1a1a]/40 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-3xl transition-all duration-500",
+            isInputFocused ? "bg-[#1a1a1a]/60 shadow-[0_20px_60px_rgba(0,0,0,0.6)]" : "",
             isTextareaExpanded ? 'chat-input-expanded' : ''
           )}
         >
@@ -279,7 +283,7 @@ export default function ChatComposer({
           
           {/* Integrated Image Previews */}
           {attachedImages.length > 0 && (
-            <div className="px-2 pt-2 border-b border-white/[0.04]">
+            <div className="px-2 pt-2 border-b border-border">
               <div className="flex flex-wrap gap-2 pb-2 overflow-x-auto no-scrollbar">
                 {attachedImages.map((file, index) => (
                   <ImageAttachment
@@ -324,7 +328,13 @@ export default function ChatComposer({
               onFocus={() => onInputFocusChange?.(true)}
               onBlur={() => onInputFocusChange?.(false)}
               onInput={onTextareaInput}
-              placeholder={pendingPermissionRequests.length > 0 ? t('input.permissionRequired') : placeholder}
+              placeholder={
+                pendingPermissionRequests.length > 0
+                  ? t('input.permissionRequired')
+                  : !isConnected
+                    ? t('input.reconnecting', { defaultValue: 'Reconnecting...' })
+                    : placeholder
+              }
               className="chat-input-placeholder block flex-1 max-h-[108px] min-h-[36px] w-full resize-none overflow-y-auto rounded-lg bg-transparent py-1.5 px-2 text-[15px] leading-[24px] text-white/90 placeholder-white/20 transition-all duration-300 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 sm:max-h-[108px] sm:min-h-[36px] sm:py-1.5"
               style={{ height: '36px' }}
               disabled={pendingPermissionRequests.length > 0}
@@ -364,14 +374,14 @@ export default function ChatComposer({
               ) : (
                 <button
                   type="submit"
-                  disabled={(!input.trim() && attachedImages.length === 0) || pendingPermissionRequests.length > 0}
+                  disabled={!isConnected || (!input.trim() && attachedImages.length === 0) || pendingPermissionRequests.length > 0}
                   className={cn(
                     "group/send flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-500 active:scale-95 disabled:scale-100 disabled:opacity-20 disabled:grayscale",
                     input.trim() || attachedImages.length > 0
                       ? "bg-gradient-to-br from-white via-white to-white/90 text-black shadow-[0_10px_25px_rgba(255,255,255,0.15)] premium-glow hover:scale-[1.08] hover:shadow-[0_10px_35px_rgba(255,255,255,0.25)]"
                       : "bg-white/[0.05] text-white/20"
                   )}
-                  title={t('input.sendMessage')}
+                  title={!isConnected ? t('input.reconnecting', { defaultValue: 'Reconnecting...' }) : t('input.sendMessage')}
                 >
                   <svg 
                     className={cn(

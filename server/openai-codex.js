@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { chatCommandReceiptsDb } from './database/db.js';
 import { notifyRunFailed, notifyRunStopped } from './services/notification-orchestrator.js';
 import { extractCodexTurnCompletionStatesFromRollout } from './services/codex-rollout.js';
 import {
@@ -160,6 +161,8 @@ export async function queryCodex(command, options = {}, writer) {
   const {
     sessionId,
     sessionSummary,
+    clientCommandId,
+    userId,
     cwd,
     projectPath,
     model,
@@ -202,7 +205,11 @@ export async function queryCodex(command, options = {}, writer) {
         type: 'session-created',
         sessionId: threadId,
         provider: 'codex',
+        clientCommandId,
       });
+      if (userId && clientCommandId) {
+        chatCommandReceiptsDb.updateSession(userId, clientCommandId, threadId);
+      }
     }
 
     if (!threadId) {
@@ -279,9 +286,13 @@ export async function queryCodex(command, options = {}, writer) {
         sessionId: threadId,
         actualSessionId: threadId,
         provider: 'codex',
+        clientCommandId,
         lastAgentMessage: completionState?.lastAgentMessage ?? null,
         missingFinalSummary: Boolean(completionState?.missingFinalSummary),
       });
+      if (userId && clientCommandId) {
+        chatCommandReceiptsDb.updateStatus(userId, clientCommandId, 'completed', threadId);
+      }
     }
 
     notifyRunStopped({
@@ -304,7 +315,11 @@ export async function queryCodex(command, options = {}, writer) {
         error: message,
         sessionId: threadId,
         provider: 'codex',
+        clientCommandId,
       });
+      if (userId && clientCommandId) {
+        chatCommandReceiptsDb.updateStatus(userId, clientCommandId, 'failed', threadId);
+      }
       notifyRunFailed({
         userId: writer?.userId || null,
         provider: 'codex',

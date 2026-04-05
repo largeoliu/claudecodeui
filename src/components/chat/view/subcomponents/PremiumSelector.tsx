@@ -111,10 +111,10 @@ export default function PremiumSelector({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border transition-all duration-300 shadow-inner px-2.5",
+          "flex h-8 w-full items-center justify-between gap-1.5 rounded-xl border transition-all duration-300 shadow-inner px-2.5",
           isOpen 
-            ? "bg-white/10 border-white/10 text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]" 
-            : "bg-white/[0.05] border-white/[0.08] text-white/70 hover:bg-white/[0.08] hover:border-white/20 hover:text-white/90"
+            ? "bg-white/10 border-[#3f3f46] text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]" 
+            : "bg-[transparent] border-[#3f3f46] text-white/70 hover:bg-white/[0.08] hover:text-white/90"
         )}
         title={title || placeholder}
       >

@@ -6,6 +6,7 @@ export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | '
 export type CodexInteractionMode = 'edit' | 'plan';
 export type CodexApprovalPolicy = 'untrusted' | 'on-request' | 'never';
 export type InteractiveRequestDeliveryState = 'idle' | 'submitting' | 'processing' | 'failed';
+export type PendingChatCommandDeliveryState = 'queued' | 'sent';
 
 export interface ChatImage {
   data: string;
@@ -86,6 +87,19 @@ export interface PendingPermissionRequest {
   receivedAt?: Date | string;
   deliveryState?: InteractiveRequestDeliveryState;
   deliveryError?: string | null;
+}
+
+export interface PendingChatCommand {
+  clientCommandId: string;
+  projectName: string;
+  provider: SessionProvider;
+  payload: Record<string, unknown>;
+  sessionId: string | null;
+  requiresSessionBinding: boolean;
+  acknowledged: boolean;
+  deliveryState: PendingChatCommandDeliveryState;
+  status: string;
+  createdAt: number;
 }
 
 export interface QuestionOption {

@@ -13,6 +13,8 @@ const SUPPORTED_APPROVAL_POLICIES = new Set(['untrusted', 'on-request', 'never']
 const SUPPORTED_COLLABORATION_MODES = new Set(['default', 'plan']);
 const DEFAULT_CODEX_APPROVAL_POLICY = 'on-request';
 const DEFAULT_CODEX_SANDBOX = 'workspace-write';
+const METADATA_REQUEST_SPACING_MS = 100;
+const TRANSIENT_METADATA_RETRY_DELAYS_MS = [150, 350, 700];
 
 function createDeferred() {
   let resolve;
@@ -22,6 +24,50 @@ function createDeferred() {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+function delay(ms) {
+  if (!ms || ms <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isTransientMetadataError(error) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const code = error?.code;
+
+  return (
+    code === -32001
+    || /server overloaded|retry later|temporar(?:y|ily) unavailable|busy/i.test(message)
+    || /missing rollout path|state db missing rollout path/i.test(message)
+  );
+}
+
+function getMetadataRetryDelay(error, attempt) {
+  if (!isTransientMetadataError(error)) {
+    return null;
+  }
+
+  return TRANSIENT_METADATA_RETRY_DELAYS_MS[attempt] ?? null;
+}
+
+function buildThreadListRequestKey(options = {}) {
+  const sourceKinds = Array.isArray(options.sourceKinds)
+    ? options.sourceKinds.join(',')
+    : INTERACTIVE_SOURCE_KINDS.join(',');
+
+  return [
+    'thread/list',
+    options.cursor || '',
+    options.pageSize || 100,
+    sourceKinds,
+    options.archived ?? false,
+    options.singlePage ?? false,
+  ].join(':');
 }
 
 function sendWriterMessage(writer, payload) {
@@ -615,6 +661,10 @@ class CodexAppServer {
     this.threadTokenUsage = new Map();
     this.threadCollaborationModes = new Map();
     this.threadTurnSettings = new Map();
+    this.metadataRequestQueue = Promise.resolve();
+    this.nextMetadataRequestAt = 0;
+    this.inFlightMetadataRequests = new Map();
+    this.threadLoadPromises = new Map();
   }
 
   async ensureStarted() {
@@ -703,6 +753,10 @@ class CodexAppServer {
     this.threadWriters.clear();
     this.threadCollaborationModes.clear();
     this.threadTurnSettings.clear();
+    this.inFlightMetadataRequests.clear();
+    this.threadLoadPromises.clear();
+    this.metadataRequestQueue = Promise.resolve();
+    this.nextMetadataRequestAt = 0;
     this.child = null;
     this.stdoutBuffer = '';
   }
@@ -1179,6 +1233,67 @@ class CodexAppServer {
     return deferred.promise;
   }
 
+  async runMetadataRequest(task) {
+    const previous = this.metadataRequestQueue;
+    let releaseQueue = () => {};
+
+    this.metadataRequestQueue = new Promise((resolve) => {
+      releaseQueue = resolve;
+    });
+
+    await previous.catch(() => {});
+
+    try {
+      const now = Date.now();
+      const waitMs = Math.max(0, this.nextMetadataRequestAt - now);
+      if (waitMs > 0) {
+        await delay(waitMs);
+      }
+
+      return await task();
+    } finally {
+      this.nextMetadataRequestAt = Date.now() + METADATA_REQUEST_SPACING_MS;
+      releaseQueue();
+    }
+  }
+
+  executeDedupedMetadataRequest(key, task) {
+    const existing = this.inFlightMetadataRequests.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = (async () => {
+      let attempt = 0;
+
+      while (true) {
+        try {
+          return await this.runMetadataRequest(task);
+        } catch (error) {
+          const normalizedError = normalizeAppServerError(error, 'Codex metadata request failed');
+          const retryDelay = getMetadataRetryDelay(normalizedError, attempt);
+
+          if (retryDelay === null) {
+            throw normalizedError;
+          }
+
+          attempt += 1;
+          console.warn(`[CodexAppServer] Retrying metadata request ${key}:`, normalizedError.message);
+          await delay(retryDelay);
+        }
+      }
+    })();
+
+    this.inFlightMetadataRequests.set(key, promise);
+    promise.finally(() => {
+      if (this.inFlightMetadataRequests.get(key) === promise) {
+        this.inFlightMetadataRequests.delete(key);
+      }
+    });
+
+    return promise;
+  }
+
   registerWriter(threadId, writer) {
     if (!threadId || !writer) {
       return;
@@ -1280,7 +1395,21 @@ class CodexAppServer {
       return;
     }
 
-    await this.resumeThread(threadId, options);
+    const existingLoad = this.threadLoadPromises.get(threadId);
+    if (existingLoad) {
+      await existingLoad;
+      return;
+    }
+
+    const loadPromise = this.resumeThread(threadId, options)
+      .finally(() => {
+        if (this.threadLoadPromises.get(threadId) === loadPromise) {
+          this.threadLoadPromises.delete(threadId);
+        }
+      });
+
+    this.threadLoadPromises.set(threadId, loadPromise);
+    await loadPromise;
   }
 
   getTrackedCollaborationMode(threadId) {
@@ -1453,12 +1582,19 @@ class CodexAppServer {
     let cursor = options.cursor || null;
 
     while (true) {
-      const page = await this.sendRequest('thread/list', {
+      const requestParams = {
         cursor,
         limit: options.pageSize || 100,
         sourceKinds: Array.isArray(options.sourceKinds) ? options.sourceKinds : INTERACTIVE_SOURCE_KINDS,
         archived: options.archived ?? false,
-      });
+      };
+      const page = await this.executeDedupedMetadataRequest(
+        buildThreadListRequestKey({
+          ...options,
+          cursor,
+        }),
+        () => this.sendRequest('thread/list', requestParams),
+      );
 
       const threads = Array.isArray(page?.data) ? page.data : [];
       results.push(...threads);
@@ -1475,10 +1611,13 @@ class CodexAppServer {
   }
 
   async readThread(threadId, includeTurns = true) {
-    const result = await this.sendRequest('thread/read', {
-      threadId,
-      includeTurns,
-    });
+    const result = await this.executeDedupedMetadataRequest(
+      `thread/read:${threadId}:${includeTurns ? 'full' : 'summary'}`,
+      () => this.sendRequest('thread/read', {
+        threadId,
+        includeTurns,
+      }),
+    );
 
     const thread = result?.thread;
     if (!thread) {

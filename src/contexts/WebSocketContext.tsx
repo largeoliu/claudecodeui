@@ -36,14 +36,24 @@ const buildWebSocketUrl = (token: string | null) => {
 
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const BASE_RECONNECT_DELAY_MS = 1_000;
+const STALE_CONNECTION_TIMEOUT_MS = 75_000;
+const STALE_CONNECTION_CHECK_INTERVAL_MS = 15_000;
+
+const calculateReconnectDelay = (attempt: number) => {
+  const cappedDelay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, attempt), MAX_RECONNECT_DELAY_MS);
+  const jitter = Math.floor(Math.random() * 250);
+  return cappedDelay + jitter;
+};
 
 const useWebSocketProviderState = (): WebSocketContextType => {
   const wsRef = useRef<WebSocket | null>(null);
   const messageListenersRef = useRef<Set<WebSocketMessageHandler>>(new Set());
   const unmountedRef = useRef(false);
+  const intentionalSocketClosuresRef = useRef(new WeakSet<WebSocket>());
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationRef = useRef(0);
+  const lastServerSeenAtRef = useRef(Date.now());
   const [isConnected, setIsConnected] = useState(false);
   const { token } = useAuth();
 
@@ -62,10 +72,8 @@ const useWebSocketProviderState = (): WebSocketContextType => {
     };
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback((force = false) => {
     if (unmountedRef.current) return;
-
-    const currentGeneration = ++generationRef.current;
 
     const wsUrl = buildWebSocketUrl(token);
     if (!wsUrl) {
@@ -73,25 +81,45 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       return;
     }
 
-    if (wsRef.current && wsRef.current.readyState < WebSocket.CLOSING) {
-      wsRef.current.close();
+    const existingSocket = wsRef.current;
+    if (existingSocket && !force) {
+      if (existingSocket.readyState === WebSocket.CONNECTING || existingSocket.readyState === WebSocket.OPEN) {
+        return;
+      }
     }
 
+    if (existingSocket && existingSocket.readyState < WebSocket.CLOSING) {
+      intentionalSocketClosuresRef.current.add(existingSocket);
+      existingSocket.close(1000, 'Reconnecting');
+    }
+
+    clearReconnectTimeout();
+
+    const currentGeneration = ++generationRef.current;
+
     const websocket = new WebSocket(wsUrl);
+    wsRef.current = websocket;
 
     websocket.onopen = () => {
       if (unmountedRef.current || generationRef.current !== currentGeneration) {
+        intentionalSocketClosuresRef.current.add(websocket);
         websocket.close();
         return;
       }
       reconnectAttemptRef.current = 0;
       wsRef.current = websocket;
+      lastServerSeenAtRef.current = Date.now();
       setIsConnected(true);
     };
 
     websocket.onmessage = (event) => {
+      lastServerSeenAtRef.current = Date.now();
+
       try {
         const data = JSON.parse(event.data) as WebSocketMessage;
+        if (data.type === 'heartbeat') {
+          return;
+        }
 
         messageListenersRef.current.forEach((listener) => {
           try {
@@ -108,21 +136,24 @@ const useWebSocketProviderState = (): WebSocketContextType => {
     websocket.onclose = (event) => {
       if (unmountedRef.current || generationRef.current !== currentGeneration) return;
 
-      wsRef.current = null;
+      if (wsRef.current === websocket) {
+        wsRef.current = null;
+      }
       setIsConnected(false);
 
-      if (event.code === 1000 || event.code === 1001) {
+      if (intentionalSocketClosuresRef.current.has(websocket)) {
+        intentionalSocketClosuresRef.current.delete(websocket);
         return;
       }
 
       const attempt = reconnectAttemptRef.current;
-      const delay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, attempt), MAX_RECONNECT_DELAY_MS);
+      const delay = calculateReconnectDelay(attempt);
       reconnectAttemptRef.current = attempt + 1;
 
       console.log(`[WS] Connection closed (code ${event.code}), reconnecting in ${delay}ms (attempt ${attempt + 1})`);
       reconnectTimeoutRef.current = setTimeout(() => {
         if (!unmountedRef.current && generationRef.current === currentGeneration) {
-          connect();
+          connect(true);
         }
       }, delay);
     };
@@ -130,24 +161,77 @@ const useWebSocketProviderState = (): WebSocketContextType => {
     websocket.onerror = (error) => {
       console.error('[WS] WebSocket error:', error);
     };
-  }, [token]);
+  }, [clearReconnectTimeout, token]);
 
   useEffect(() => {
     unmountedRef.current = false;
     reconnectAttemptRef.current = 0;
     clearReconnectTimeout();
-    connect();
+    connect(true);
 
     return () => {
       unmountedRef.current = true;
       clearReconnectTimeout();
       if (wsRef.current) {
+        intentionalSocketClosuresRef.current.add(wsRef.current);
         wsRef.current.close(1000, 'Component unmounted');
         wsRef.current = null;
       }
       messageListenersRef.current.clear();
     };
   }, [connect, clearReconnectTimeout]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const socket = wsRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      if (Date.now() - lastServerSeenAtRef.current <= STALE_CONNECTION_TIMEOUT_MS) {
+        return;
+      }
+
+      console.warn('[WS] Connection appears stale, forcing reconnect');
+      connect(true);
+    }, STALE_CONNECTION_CHECK_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [connect]);
+
+  useEffect(() => {
+    const maybeRecoverConnection = () => {
+      if (unmountedRef.current) {
+        return;
+      }
+
+      const socket = wsRef.current;
+      const isSocketOpen = socket?.readyState === WebSocket.OPEN;
+      const isSocketStale = isSocketOpen && Date.now() - lastServerSeenAtRef.current > STALE_CONNECTION_TIMEOUT_MS;
+
+      if (!socket || socket.readyState === WebSocket.CLOSED || isSocketStale) {
+        connect(Boolean(isSocketStale));
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        maybeRecoverConnection();
+      }
+    };
+
+    window.addEventListener('online', maybeRecoverConnection);
+    window.addEventListener('focus', maybeRecoverConnection);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('online', maybeRecoverConnection);
+      window.removeEventListener('focus', maybeRecoverConnection);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [connect]);
 
   const sendMessage = useCallback((message: unknown) => {
     const socket = wsRef.current;

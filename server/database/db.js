@@ -148,6 +148,23 @@ const runMigrations = () => {
     )`);
     db.exec('CREATE INDEX IF NOT EXISTS idx_session_names_lookup ON session_names(session_id, provider)');
 
+    db.exec(`CREATE TABLE IF NOT EXISTS chat_command_receipts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      client_command_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      payload_hash TEXT NOT NULL,
+      requested_session_id TEXT,
+      actual_session_id TEXT,
+      status TEXT NOT NULL DEFAULT 'accepted',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, client_command_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_chat_command_receipts_lookup ON chat_command_receipts(user_id, client_command_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_chat_command_receipts_status ON chat_command_receipts(status, updated_at)');
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
@@ -596,6 +613,77 @@ const appConfigDb = {
   }
 };
 
+const chatCommandReceiptsDb = {
+  get: (userId, clientCommandId) => {
+    return db.prepare(`
+      SELECT id, user_id, client_command_id, provider, payload_hash, requested_session_id,
+             actual_session_id, status, created_at, updated_at
+      FROM chat_command_receipts
+      WHERE user_id = ? AND client_command_id = ?
+    `).get(userId, clientCommandId) || null;
+  },
+
+  createOrGet: ({
+    userId,
+    clientCommandId,
+    provider,
+    payloadHash,
+    requestedSessionId = null,
+    actualSessionId = null,
+    status = 'accepted',
+  }) => {
+    const result = db.prepare(`
+      INSERT OR IGNORE INTO chat_command_receipts (
+        user_id,
+        client_command_id,
+        provider,
+        payload_hash,
+        requested_session_id,
+        actual_session_id,
+        status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId,
+      clientCommandId,
+      provider,
+      payloadHash,
+      requestedSessionId,
+      actualSessionId,
+      status,
+    );
+
+    return {
+      created: result.changes > 0,
+      receipt: chatCommandReceiptsDb.get(userId, clientCommandId),
+    };
+  },
+
+  updateSession: (userId, clientCommandId, actualSessionId) => {
+    db.prepare(`
+      UPDATE chat_command_receipts
+      SET actual_session_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ? AND client_command_id = ?
+    `).run(actualSessionId, userId, clientCommandId);
+  },
+
+  updateStatus: (userId, clientCommandId, status, actualSessionId = null) => {
+    db.prepare(`
+      UPDATE chat_command_receipts
+      SET status = ?,
+          actual_session_id = COALESCE(?, actual_session_id),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ? AND client_command_id = ?
+    `).run(status, actualSessionId, userId, clientCommandId);
+  },
+
+  pruneOlderThanDays: (days = 7) => {
+    db.prepare(`
+      DELETE FROM chat_command_receipts
+      WHERE updated_at < datetime('now', ?)
+    `).run(`-${Math.max(1, Math.floor(days))} days`);
+  },
+};
+
 // Backward compatibility - keep old names pointing to new system
 const githubTokensDb = {
   createGithubToken: (userId, tokenName, githubToken, description = null) => {
@@ -626,5 +714,6 @@ export {
   sessionNamesDb,
   applyCustomSessionNames,
   appConfigDb,
+  chatCommandReceiptsDb,
   githubTokensDb // Backward compatibility
 };

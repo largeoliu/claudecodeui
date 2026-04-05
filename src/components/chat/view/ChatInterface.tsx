@@ -18,6 +18,7 @@ import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import ChatComposer from './subcomponents/ChatComposer';
 
 const CHAT_REALTIME_MESSAGE_TYPES = new Set([
+  'command-accepted',
   'session-created',
   'websocket-reconnected',
   'token-budget',
@@ -105,6 +106,21 @@ function ChatInterface({
   const interactiveRequestTimeoutsRef = useRef(
     new Map<string, { deliveryState: InFlightInteractiveRequestState; timeoutId: number }>(),
   );
+  const hasConnectedWebSocketRef = useRef(false);
+  const reconnectSelectionVersionRef = useRef(0);
+  const lastSelectionKeyRef = useRef('');
+
+  const selectionKey = `${selectedProject?.name || ''}:${selectedSession?.id || ''}:${selectedSession?.__provider || ''}`;
+  if (lastSelectionKeyRef.current !== selectionKey) {
+    lastSelectionKeyRef.current = selectionKey;
+    reconnectSelectionVersionRef.current += 1;
+  }
+
+  activeSessionSelectionRef.current = {
+    projectName: selectedProject?.name || null,
+    sessionId: selectedSession?.id || null,
+    provider: selectedSession?.id ? (selectedSession.__provider || 'claude') : null,
+  };
 
   const resetStreamingState = useCallback(() => {
     if (streamTimerRef.current) {
@@ -113,14 +129,6 @@ function ChatInterface({
     }
     streamBufferRef.current = '';
   }, []);
-
-  useEffect(() => {
-    activeSessionSelectionRef.current = {
-      projectName: selectedProject?.name || null,
-      sessionId: selectedSession?.id || null,
-      provider: selectedSession?.id ? (selectedSession.__provider || 'claude') : null,
-    };
-  }, [selectedProject?.name, selectedSession?.id, selectedSession?.__provider]);
 
   const {
     chatMessages,
@@ -270,6 +278,9 @@ function ChatInterface({
     handleGrantToolPermission,
     handleInputFocusChange,
     isInputFocused,
+    pendingCommand,
+    retryPendingCommand,
+    reconcilePendingCommandMessage,
   } = useChatComposerState({
     selectedProject,
     selectedSession,
@@ -284,6 +295,7 @@ function ChatInterface({
     codexReasoningEffort,
     geminiModel,
     isLoading,
+    isWebSocketConnected: Boolean(ws),
     canAbortSession,
     tokenBudget,
     sendMessage,
@@ -311,6 +323,7 @@ function ChatInterface({
   // would be stuck in "Processing..." forever without this reset.
   const handleWebSocketReconnect = useCallback(async () => {
     if (!selectedProject || !selectedSession) return;
+    const reconnectSelectionVersion = reconnectSelectionVersionRef.current;
     const requestProjectName = selectedProject.name;
     const requestSessionId = selectedSession.id;
     const requestProvider = selectedSession.__provider || 'claude';
@@ -318,6 +331,8 @@ function ChatInterface({
     const activeSelection = activeSessionSelectionRef.current;
 
     if (
+      reconnectSelectionVersion !== reconnectSelectionVersionRef.current
+      ||
       activeSelection.projectName !== requestProjectName
       || activeSelection.sessionId !== requestSessionId
       || activeSelection.provider !== requestProvider
@@ -332,16 +347,47 @@ function ChatInterface({
     // set it back to true. If it died, this clears the permanent frozen state.
     setIsLoading(false);
     setCanAbortSession(false);
+    sendMessage({
+      type: 'check-session-status',
+      sessionId: requestSessionId,
+      provider: requestProvider,
+    });
     requestPendingPermissions();
   }, [
     loadSessionMessages,
     requestPendingPermissions,
     selectedProject,
     selectedSession,
+    sendMessage,
     setChatMessages,
     setCanAbortSession,
     setIsLoading,
   ]);
+
+  useEffect(() => {
+    if (!latestMessage) {
+      return;
+    }
+
+    reconcilePendingCommandMessage(latestMessage);
+  }, [latestMessage, reconcilePendingCommandMessage]);
+
+  useEffect(() => {
+    if (!ws) {
+      return;
+    }
+
+    const shouldTreatAsReconnect = hasConnectedWebSocketRef.current;
+    hasConnectedWebSocketRef.current = true;
+
+    if (pendingCommand && pendingCommand.projectName === selectedProject?.name) {
+      retryPendingCommand();
+    }
+
+    if (shouldTreatAsReconnect) {
+      void handleWebSocketReconnect();
+    }
+  }, [handleWebSocketReconnect, pendingCommand, retryPendingCommand, ws]);
 
   useChatRealtimeHandlers({
     latestMessage,
@@ -563,6 +609,7 @@ function ChatInterface({
           onClearInput={handleClearInput}
           isUserScrolledUp={isUserScrolledUp}
           hasMessages={chatMessages.length > 0}
+          isConnected={Boolean(ws)}
           onScrollToBottom={scrollToBottomAndReset}
           onSubmit={handleSubmit}
           isDragActive={isDragActive}

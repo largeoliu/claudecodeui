@@ -78,10 +78,15 @@ describe('WebSocketContext', () => {
 
   beforeEach(() => {
     vi.useRealTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     MockWebSocket.instances = [];
     webSocketContextMocks.isPlatform = false;
     webSocketContextMocks.token = 'auth-token';
     webSocketContextMocks.useAuth.mockImplementation(() => ({ token: webSocketContextMocks.token }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   function wrapper({ children }: { children: ReactNode }) {

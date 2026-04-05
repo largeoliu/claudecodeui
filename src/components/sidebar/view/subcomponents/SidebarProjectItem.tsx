@@ -123,9 +123,9 @@ export default function SidebarProjectItem({
         <div className="md:hidden">
           <div
             className={cn(
-              'p-3 mx-3 my-1 rounded-lg bg-white/5 border border-white/5 active:scale-[0.98] transition-all duration-150',
-              isSelected && 'active-sidebar-item bg-white/10 border-white/10 text-white',
-              isStarred && !isSelected && 'bg-white/[0.03] border-white/5',
+              'p-3 mx-3 my-1 rounded-lg bg-white/5 border border-white/[0.02] active:scale-[0.98] transition-all duration-150',
+              isSelected && 'active-sidebar-item bg-white/10 border-white/5 text-white',
+              isStarred && !isSelected && 'bg-white/[0.03] border-white/[0.02]',
             )}
             onClick={toggleProject}
           >
@@ -150,7 +150,7 @@ export default function SidebarProjectItem({
                       type="text"
                       value={editingName}
                       onChange={(event) => onEditingNameChange(event.target.value)}
-                      className="w-full rounded-lg border-2 border-white/20 bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-all duration-200 focus:border-white/40 focus:shadow-md focus:outline-none"
+                      className="w-full rounded-lg border-2 border-white/10 bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-all duration-200 focus:border-white/20 focus:shadow-md focus:outline-none"
                       placeholder={t('projects.projectNamePlaceholder')}
                       autoFocus
                       autoComplete="off"
@@ -246,7 +246,7 @@ export default function SidebarProjectItem({
                     </button>
 
                     <button
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 active:scale-90"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/5 bg-white/5 active:scale-90"
                       onClick={(event) => {
                         event.stopPropagation();
                         onStartEditingProject(project);

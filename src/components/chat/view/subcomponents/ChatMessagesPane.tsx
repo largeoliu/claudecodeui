@@ -213,7 +213,7 @@ export default function ChatMessagesPane({
       className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
     >
       <div className="w-full px-2 sm:px-4 md:px-4">
-        <div className="mx-auto w-full max-w-5xl py-3 sm:py-4">
+        <div className="mx-auto w-full max-w-5xl pt-3 sm:pt-4">
           {isLoadingSessionMessages && chatMessages.length === 0 ? (
           <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
             <div className="flex items-center justify-center space-x-2">

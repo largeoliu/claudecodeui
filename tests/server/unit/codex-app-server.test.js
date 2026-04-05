@@ -17,6 +17,10 @@ function resetCodexAppServerState() {
   codexAppServer.threadTokenUsage.clear();
   codexAppServer.threadCollaborationModes.clear();
   codexAppServer.threadTurnSettings.clear();
+  codexAppServer.inFlightMetadataRequests.clear();
+  codexAppServer.threadLoadPromises.clear();
+  codexAppServer.metadataRequestQueue = Promise.resolve();
+  codexAppServer.nextMetadataRequestAt = 0;
 }
 
 describe('codexAppServer interactive request lifecycle', () => {
@@ -135,6 +139,53 @@ describe('codexAppServer interactive request lifecycle', () => {
       },
     });
     expect(codexAppServer.pendingUiResponseAcks.has('42')).toBe(true);
+  });
+
+  it('dedupes concurrent metadata reads for the same thread', async () => {
+    const sendRequestSpy = vi.spyOn(codexAppServer, 'sendRequest').mockResolvedValue({
+      thread: {
+        id: 'session-1',
+        source: 'cli',
+      },
+    });
+
+    const [first, second] = await Promise.all([
+      codexAppServer.readThread('session-1', true),
+      codexAppServer.readThread('session-1', true),
+    ]);
+
+    expect(sendRequestSpy).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+  });
+
+  it('retries transient metadata failures before succeeding', async () => {
+    const sendRequestSpy = vi.spyOn(codexAppServer, 'sendRequest')
+      .mockRejectedValueOnce({ code: -32001, message: 'Server overloaded; retry later.' })
+      .mockResolvedValueOnce({
+        thread: {
+          id: 'session-1',
+          source: 'cli',
+        },
+      });
+
+    const thread = await codexAppServer.readThread('session-1', true);
+
+    expect(sendRequestSpy).toHaveBeenCalledTimes(2);
+    expect(thread).toEqual({ id: 'session-1', source: 'cli' });
+  });
+
+  it('dedupes concurrent thread loading', async () => {
+    const resumeThreadSpy = vi.spyOn(codexAppServer, 'resumeThread').mockImplementation(async (threadId) => {
+      codexAppServer.loadedThreads.add(threadId);
+      return { thread: { id: threadId } };
+    });
+
+    await Promise.all([
+      codexAppServer.ensureThreadLoaded('session-1'),
+      codexAppServer.ensureThreadLoaded('session-1'),
+    ]);
+
+    expect(resumeThreadSpy).toHaveBeenCalledTimes(1);
   });
 
   it('preserves numeric request ids for approval responses', async () => {

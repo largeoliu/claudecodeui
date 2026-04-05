@@ -23,6 +23,7 @@ import type {
   CodexApprovalPolicy,
   CodexInteractionMode,
   ChatMessage,
+  PendingChatCommand,
   PendingPermissionRequest,
   PermissionMode,
 } from '../types/types';
@@ -50,6 +51,7 @@ interface UseChatComposerStateArgs {
   codexReasoningEffort: CodexReasoningEffort;
   geminiModel: string;
   isLoading: boolean;
+  isWebSocketConnected: boolean;
   canAbortSession: boolean;
   tokenBudget: Record<string, unknown> | null;
   sendMessage: (message: unknown) => boolean;
@@ -110,6 +112,14 @@ const getNotificationSessionSummary = (
   return normalizedFallback.length > 80 ? `${normalizedFallback.slice(0, 77)}...` : normalizedFallback;
 };
 
+const createClientCommandId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `cmd-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 export function useChatComposerState({
   selectedProject,
   selectedSession,
@@ -124,6 +134,7 @@ export function useChatComposerState({
   codexReasoningEffort,
   geminiModel,
   isLoading,
+  isWebSocketConnected,
   canAbortSession,
   tokenBudget,
   sendMessage,
@@ -162,6 +173,25 @@ export function useChatComposerState({
     ((event: FormEvent<HTMLFormElement> | MouseEvent | TouchEvent | KeyboardEvent<HTMLTextAreaElement>) => Promise<void>) | null
   >(null);
   const inputValueRef = useRef(input);
+  const [pendingCommand, setPendingCommand] = useState<PendingChatCommand | null>(null);
+  const pendingCommandRef = useRef<PendingChatCommand | null>(null);
+
+  const updatePendingCommand = useCallback((
+    updater: PendingChatCommand | null | ((previous: PendingChatCommand | null) => PendingChatCommand | null),
+  ) => {
+    setPendingCommand((previous) => {
+      const next = typeof updater === 'function'
+        ? (updater as (previous: PendingChatCommand | null) => PendingChatCommand | null)(previous)
+        : updater;
+      pendingCommandRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const clearPendingCommand = useCallback(() => {
+    pendingCommandRef.current = null;
+    setPendingCommand(null);
+  }, []);
 
   const handleBuiltInCommand = useCallback(
     (result: CommandExecutionResult) => {
@@ -512,6 +542,98 @@ export function useChatComposerState({
     noKeyboard: true,
   });
 
+  const retryPendingCommand = useCallback(() => {
+    const pending = pendingCommandRef.current;
+    if (!pending) {
+      return false;
+    }
+
+    const didSend = sendMessage(pending.payload);
+    updatePendingCommand((previous) => {
+      if (!previous || previous.clientCommandId !== pending.clientCommandId) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        deliveryState: didSend ? 'sent' : 'queued',
+      };
+    });
+
+    setClaudeStatus({
+      text: didSend ? 'Processing' : 'Waiting for reconnect',
+      tokens: 0,
+      can_interrupt: false,
+    });
+
+    return didSend;
+  }, [sendMessage, setClaudeStatus, updatePendingCommand]);
+
+  const reconcilePendingCommandMessage = useCallback((message: Record<string, unknown> | null | undefined) => {
+    const pending = pendingCommandRef.current;
+    if (!pending || !message?.type) {
+      return;
+    }
+
+    const messageType = String(message.type);
+    if (messageType === 'command-accepted') {
+      if (message.clientCommandId !== pending.clientCommandId) {
+        return;
+      }
+
+      const nextStatus = typeof message.status === 'string' ? message.status : 'accepted';
+      const acceptedSessionId = typeof message.sessionId === 'string' && message.sessionId ? message.sessionId : null;
+      if (nextStatus === 'completed' || nextStatus === 'failed' || acceptedSessionId || !pending.requiresSessionBinding) {
+        clearPendingCommand();
+        return;
+      }
+
+      updatePendingCommand((previous) => {
+        if (!previous || previous.clientCommandId !== pending.clientCommandId) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          acknowledged: true,
+          deliveryState: 'sent',
+          status: nextStatus,
+        };
+      });
+      setClaudeStatus({
+        text: nextStatus === 'accepted' ? 'Processing' : nextStatus,
+        tokens: 0,
+        can_interrupt: false,
+      });
+      return;
+    }
+
+    const messageProvider = typeof message.provider === 'string'
+      ? message.provider
+      : messageType.startsWith('codex-')
+        ? 'codex'
+        : messageType.startsWith('gemini-')
+          ? 'gemini'
+          : 'claude';
+
+    if (messageProvider !== pending.provider) {
+      return;
+    }
+
+    if (messageType === 'session-created') {
+      if (message.clientCommandId !== pending.clientCommandId) {
+        return;
+      }
+      clearPendingCommand();
+      return;
+    }
+
+    if ((messageType === 'claude-complete' || messageType === 'codex-complete' || messageType === 'claude-error' || messageType === 'codex-error' || messageType === 'gemini-error')
+      && message.clientCommandId === pending.clientCommandId) {
+      clearPendingCommand();
+    }
+  }, [clearPendingCommand, setClaudeStatus, updatePendingCommand]);
+
   const handleSubmit = useCallback(
     async (
       event: FormEvent<HTMLFormElement> | MouseEvent | TouchEvent | KeyboardEvent<HTMLTextAreaElement>,
@@ -648,10 +770,13 @@ export function useChatComposerState({
       const toolsSettings = getToolsSettings();
       const resolvedProjectPath = selectedProject.fullPath || selectedProject.path || '';
       const sessionSummary = getNotificationSessionSummary(selectedSession, currentInput);
+      const clientCommandId = createClientCommandId();
+      let commandPayload: Record<string, unknown>;
 
       if (provider === 'codex') {
-        sendMessage({
+        commandPayload = {
           type: 'codex-command',
+          clientCommandId,
           command: messageContent,
           sessionId: effectiveSessionId,
           options: {
@@ -666,10 +791,11 @@ export function useChatComposerState({
             approvalPolicy: codexApprovalPolicy,
             images: uploadedImages,
           },
-        });
+        };
       } else if (provider === 'gemini') {
-        sendMessage({
+        commandPayload = {
           type: 'gemini-command',
+          clientCommandId,
           command: messageContent,
           sessionId: effectiveSessionId,
           options: {
@@ -682,10 +808,11 @@ export function useChatComposerState({
             permissionMode,
             toolsSettings,
           },
-        });
+        };
       } else {
-        sendMessage({
+        commandPayload = {
           type: 'claude-command',
+          clientCommandId,
           command: messageContent,
           options: {
             projectPath: resolvedProjectPath,
@@ -698,8 +825,39 @@ export function useChatComposerState({
             sessionSummary,
             images: uploadedImages,
           },
-        });
+        };
       }
+
+      updatePendingCommand({
+        clientCommandId,
+        projectName: selectedProject.name,
+        provider,
+        payload: commandPayload,
+        sessionId: effectiveSessionId || null,
+        requiresSessionBinding: !effectiveSessionId,
+        acknowledged: false,
+        deliveryState: 'queued',
+        status: 'queued',
+        createdAt: Date.now(),
+      });
+
+      const didSend = sendMessage(commandPayload);
+      updatePendingCommand((previous) => {
+        if (!previous || previous.clientCommandId !== clientCommandId) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          deliveryState: didSend ? 'sent' : 'queued',
+          status: didSend ? 'accepted' : 'queued',
+        };
+      });
+      setClaudeStatus({
+        text: didSend ? 'Processing' : 'Waiting for reconnect',
+        tokens: 0,
+        can_interrupt: false,
+      });
 
       setInput('');
       inputValueRef.current = '';
@@ -746,12 +904,25 @@ export function useChatComposerState({
       setIsUserScrolledUp,
       slashCommands,
       thinkingMode,
+      updatePendingCommand,
     ],
   );
 
   useEffect(() => {
     handleSubmitRef.current = handleSubmit;
   }, [handleSubmit]);
+
+  useEffect(() => {
+    if (isWebSocketConnected || !pendingCommand) {
+      return;
+    }
+
+    setClaudeStatus({
+      text: 'Waiting for reconnect',
+      tokens: 0,
+      can_interrupt: false,
+    });
+  }, [isWebSocketConnected, pendingCommand, setClaudeStatus]);
 
   useEffect(() => {
     inputValueRef.current = input;
@@ -1058,5 +1229,8 @@ export function useChatComposerState({
     handleGrantToolPermission,
     handleInputFocusChange,
     isInputFocused,
+    pendingCommand,
+    retryPendingCommand,
+    reconcilePendingCommandMessage,
   };
 }

@@ -7,6 +7,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { getSessions, getSessionMessages } from './projects.js';
+import { chatCommandReceiptsDb } from './database/db.js';
 import sessionManager from './sessionManager.js';
 import GeminiResponseHandler from './gemini-response-handler.js';
 import { notifyRunFailed, notifyRunStopped } from './services/notification-orchestrator.js';
@@ -14,7 +15,7 @@ import { notifyRunFailed, notifyRunStopped } from './services/notification-orche
 let activeGeminiProcesses = new Map(); // Track active processes by session ID
 
 async function spawnGemini(command, options = {}, ws) {
-    const { sessionId, projectPath, cwd, resume, toolsSettings, permissionMode, images, sessionSummary } = options;
+    const { sessionId, projectPath, cwd, resume, toolsSettings, permissionMode, images, sessionSummary, clientCommandId, userId } = options;
     let capturedSessionId = sessionId; // Track session ID throughout the process
     let sessionCreatedSent = false; // Track if we've already sent session-created event
     let assistantBlocks = []; // Accumulate the full response blocks including tools
@@ -207,6 +208,7 @@ async function spawnGemini(command, options = {}, ws) {
         // Attach temp file info to process for cleanup later
         geminiProcess.tempImagePaths = tempImagePaths;
         geminiProcess.tempDir = tempDir;
+        geminiProcess.writer = ws;
 
         // Store process reference for potential abort
         const processKey = capturedSessionId || sessionId || Date.now().toString();
@@ -321,8 +323,13 @@ async function spawnGemini(command, options = {}, ws) {
 
                 ws.send({
                     type: 'session-created',
-                    sessionId: capturedSessionId
+                    sessionId: capturedSessionId,
+                    provider: 'gemini',
+                    clientCommandId,
                 });
+                if (userId && clientCommandId) {
+                    chatCommandReceiptsDb.updateSession(userId, clientCommandId, capturedSessionId);
+                }
 
                 // Emit fake system init so the frontend immediately navigates and saves the session
                 ws.send({
@@ -402,8 +409,17 @@ async function spawnGemini(command, options = {}, ws) {
                 sessionId: finalSessionId,
                 exitCode: code,
                 provider: 'gemini',
+                clientCommandId,
                 isNewSession: !sessionId && !!command // Flag to indicate this was a new session
             });
+            if (userId && clientCommandId) {
+                chatCommandReceiptsDb.updateStatus(
+                    userId,
+                    clientCommandId,
+                    code === 0 ? 'completed' : 'failed',
+                    finalSessionId,
+                );
+            }
 
             // Clean up temporary image files if any
             if (geminiProcess.tempImagePaths && geminiProcess.tempImagePaths.length > 0) {
@@ -438,8 +454,12 @@ async function spawnGemini(command, options = {}, ws) {
                 type: 'gemini-error',
                 sessionId: errorSessionId,
                 error: error.message,
-                provider: 'gemini'
+                provider: 'gemini',
+                clientCommandId,
             });
+            if (userId && clientCommandId) {
+                chatCommandReceiptsDb.updateStatus(userId, clientCommandId, 'failed', errorSessionId);
+            }
             notifyTerminalState({ error });
 
             reject(error);
@@ -489,9 +509,20 @@ function getActiveGeminiSessions() {
     return Array.from(activeGeminiProcesses.keys());
 }
 
+function reconnectGeminiSessionWriter(sessionId, newRawWs) {
+    const process = activeGeminiProcesses.get(sessionId);
+    if (!process?.writer?.updateWebSocket) {
+        return false;
+    }
+
+    process.writer.updateWebSocket(newRawWs);
+    return true;
+}
+
 export {
     spawnGemini,
     abortGeminiSession,
     isGeminiSessionActive,
-    getActiveGeminiSessions
+    getActiveGeminiSessions,
+    reconnectGeminiSessionWriter,
 };

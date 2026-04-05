@@ -91,6 +91,27 @@ CREATE TABLE IF NOT EXISTS session_names (
 
 CREATE INDEX IF NOT EXISTS idx_session_names_lookup ON session_names(session_id, provider);
 
+-- Client command receipts for chat websocket dedupe and reconnect recovery
+CREATE TABLE IF NOT EXISTS chat_command_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    client_command_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    requested_session_id TEXT,
+    actual_session_id TEXT,
+    status TEXT NOT NULL DEFAULT 'accepted',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, client_command_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_command_receipts_lookup
+    ON chat_command_receipts(user_id, client_command_id);
+CREATE INDEX IF NOT EXISTS idx_chat_command_receipts_status
+    ON chat_command_receipts(status, updated_at);
+
 -- App configuration table (auto-generated secrets, settings, etc.)
 CREATE TABLE IF NOT EXISTS app_config (
     key TEXT PRIMARY KEY,

@@ -26,7 +26,13 @@ export default function WorkspacePathField({
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
 
   useEffect(() => {
-    if (value.trim().length <= 2) {
+    const trimmedValue = value.trim();
+    const shouldLookupShortAbsolutePath =
+      trimmedValue.startsWith('/') ||
+      trimmedValue.startsWith('~') ||
+      /^[A-Za-z]:/.test(trimmedValue);
+
+    if (trimmedValue.length <= 2 && !shouldLookupShortAbsolutePath) {
       setPathSuggestions([]);
       setShowPathDropdown(false);
       return;

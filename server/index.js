@@ -59,7 +59,11 @@ import mcpUtilsRoutes from './routes/mcp-utils.js';
 import commandsRoutes from './routes/commands.js';
 import settingsRoutes from './routes/settings.js';
 import agentRoutes from './routes/agent.js';
-import projectsRoutes, { WORKSPACES_ROOT, validateWorkspacePath } from './routes/projects.js';
+import projectsRoutes, {
+    isBrowsableWorkspacePath,
+    validateBrowsableWorkspacePath,
+    validateWorkspacePath,
+} from './routes/projects.js';
 import cliAuthRoutes from './routes/cli-auth.js';
 import userRoutes from './routes/user.js';
 import codexRoutes from './routes/codex.js';
@@ -663,10 +667,10 @@ app.get('/api/search/conversations', authenticateToken, async (req, res) => {
 const expandWorkspacePath = (inputPath) => {
     if (!inputPath) return inputPath;
     if (inputPath === '~') {
-        return WORKSPACES_ROOT;
+        return os.homedir();
     }
     if (inputPath.startsWith('~/') || inputPath.startsWith('~\\')) {
-        return path.join(WORKSPACES_ROOT, inputPath.slice(2));
+        return path.join(os.homedir(), inputPath.slice(2));
     }
     return inputPath;
 };
@@ -676,17 +680,14 @@ app.get('/api/browse-filesystem', authenticateToken, async (req, res) => {
     try {
         const { path: dirPath } = req.query;
 
-        console.log('[API] Browse filesystem request for path:', dirPath);
-        console.log('[API] WORKSPACES_ROOT is:', WORKSPACES_ROOT);
         // Default to home directory if no path provided
-        const defaultRoot = WORKSPACES_ROOT;
+        const defaultRoot = os.homedir();
         let targetPath = dirPath ? expandWorkspacePath(dirPath) : defaultRoot;
 
         // Resolve and normalize the path
         targetPath = path.resolve(targetPath);
 
-        // Security check - ensure path is within allowed workspace root
-        const validation = await validateWorkspacePath(targetPath);
+        const validation = await validateBrowsableWorkspacePath(targetPath);
         if (!validation.valid) {
             return res.status(403).json({ error: validation.error });
         }
@@ -710,6 +711,7 @@ app.get('/api/browse-filesystem', authenticateToken, async (req, res) => {
         // Filter only directories and format for suggestions
         const directories = fileTree
             .filter(item => item.type === 'directory')
+            .filter(item => isBrowsableWorkspacePath(item.path))
             .map(item => ({
                 path: item.path,
                 name: item.name,
@@ -725,13 +727,13 @@ app.get('/api/browse-filesystem', authenticateToken, async (req, res) => {
 
         // Add common directories if browsing home directory
         const suggestions = [];
-        let resolvedWorkspaceRoot = defaultRoot;
+        let resolvedHomeDir = defaultRoot;
         try {
-            resolvedWorkspaceRoot = await fsPromises.realpath(defaultRoot);
+            resolvedHomeDir = await fsPromises.realpath(defaultRoot);
         } catch (error) {
-            // Use default root as-is if realpath fails
+            resolvedHomeDir = path.resolve(defaultRoot);
         }
-        if (resolvedPath === resolvedWorkspaceRoot) {
+        if (resolvedPath === resolvedHomeDir) {
             const commonDirs = ['Desktop', 'Documents', 'Projects', 'Development', 'Dev', 'Code', 'workspace'];
             const existingCommon = directories.filter(dir => commonDirs.includes(dir.name));
             const otherDirs = directories.filter(dir => !commonDirs.includes(dir.name));
